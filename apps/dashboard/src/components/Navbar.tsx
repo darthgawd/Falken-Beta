@@ -12,11 +12,13 @@ import {
 } from '@coinbase/onchainkit/wallet';
 import { useName } from '@coinbase/onchainkit/identity';
 import { baseSepolia } from 'viem/chains';
+import { useRouter } from 'next/navigation';
 
 export function Navbar() {
   const { login, logout, authenticated, ready, user } = usePrivy();
   const { address: wagmiAddress, isConnected } = useAccount();
   const { disconnect } = useDisconnect();
+  const router = useRouter();
 
   const address = wagmiAddress || user?.wallet?.address;
   const { data: basename } = useName({ address: address as `0x${string}`, chain: baseSepolia });
@@ -50,6 +52,7 @@ export function Navbar() {
     try {
       if (authenticated) await logout();
       if (isConnected) disconnect();
+      router.push('/');
     } finally {
       setTimeout(() => setIsProcessing(false), 2000);
     }

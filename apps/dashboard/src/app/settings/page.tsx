@@ -5,9 +5,11 @@ import { Navbar } from '@/components/Navbar';
 import { Shield, Settings as SettingsIcon, Layout, Key, User } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
+import { useRouter } from 'next/navigation';
 
 export default function SettingsPage() {
   const { authenticated, user, login, logout, ready } = usePrivy();
+  const router = useRouter();
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [profile, setProfile] = useState<Record<string, any> | null>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -147,6 +149,11 @@ export default function SettingsPage() {
     }
   }
 
+  async function handleLogout() {
+    await logout();
+    router.push('/');
+  }
+
   if (!ready || loading) {
     return (
       <main className="min-h-screen bg-black text-zinc-400">
@@ -206,7 +213,7 @@ export default function SettingsPage() {
             
             <div className="pt-8 px-4">
                <button 
-                onClick={logout}
+                onClick={handleLogout}
                 className="text-xs font-bold text-red-500/50 hover:text-red-500 transition-colors uppercase tracking-widest"
                >
                  Disconnect Session
