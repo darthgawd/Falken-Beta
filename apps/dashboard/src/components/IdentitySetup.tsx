@@ -51,11 +51,24 @@ export function IdentitySetup() {
       const message = `BotByte Identity Claim:\nAddress: ${address}\nNickname: ${nickname}`;
       const signature = await signMessageAsync({ message });
 
+      // 1. Ensure Manager Profile exists and get its ID
+      const { data: managerData, error: managerError } = await supabase
+        .from('manager_profiles')
+        .upsert({ address: address.toLowerCase() }, { onConflict: 'address' })
+        .select('id')
+        .single();
+
+      if (managerError) throw managerError;
+
+      // 2. Link Agent to Manager
       const { error: upsertError } = await supabase
         .from('agent_profiles')
         .upsert({
           address: address.toLowerCase(),
           nickname: nickname,
+          identity_signature: signature,
+          identity_message: message,
+          manager_id: managerData.id
         });
 
       if (upsertError) throw upsertError;

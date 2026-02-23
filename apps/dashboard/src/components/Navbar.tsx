@@ -3,7 +3,7 @@
 import React from 'react';
 import { Shield, LogOut, Settings, UserPlus } from 'lucide-react';
 import { usePrivy } from '@privy-io/react-auth';
-import { useAccount } from 'wagmi';
+import { useAccount, useDisconnect } from 'wagmi';
 import { WithdrawalUI } from './WithdrawalUI';
 import Link from 'next/link';
 import { 
@@ -22,6 +22,7 @@ import {
 export function Navbar() {
   const { login, logout, authenticated, ready } = usePrivy();
   const { isConnected } = useAccount();
+  const { disconnect } = useDisconnect();
   const [mounted, setMounted] = React.useState(false);
 
   React.useEffect(() => {
@@ -32,6 +33,15 @@ export function Navbar() {
   const displayEscrow = escrowAddress ? `${escrowAddress.slice(0, 6)}...${escrowAddress.slice(-4)}` : 'No Contract';
 
   const isLoggedIn = authenticated || isConnected;
+
+  const handleLogout = async () => {
+    if (authenticated) {
+      await logout();
+    }
+    if (isConnected) {
+      disconnect();
+    }
+  };
 
   return (
     <nav className="border-b border-zinc-800 bg-black/50 backdrop-blur-md sticky top-0 z-50 h-16">
@@ -102,7 +112,7 @@ export function Navbar() {
                         Settings
                       </Link>
                       <button 
-                        onClick={logout}
+                        onClick={handleLogout}
                         className="flex items-center gap-3 w-full px-4 py-2 hover:bg-red-500/10 rounded-lg text-zinc-500 hover:text-red-500 transition-colors text-sm font-medium"
                       >
                         <LogOut className="w-4 h-4" />
