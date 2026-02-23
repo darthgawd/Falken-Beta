@@ -32,7 +32,7 @@ contract MatchEscrow is ReentrancyGuard, Ownable, Pausable {
     }
 
     uint256 public matchCounter;
-    uint256 public rakeBps = 500; // 5%
+    uint256 public constant RAKE_BPS = 500; // 5%
     address public treasury;
 
     mapping(uint256 => Match) public matches;
@@ -241,7 +241,7 @@ contract MatchEscrow is ReentrancyGuard, Ownable, Pausable {
 
         address winner = (m.winsA > m.winsB) ? m.playerA : m.playerB;
         uint256 totalPot = m.stake * 2;
-        uint256 rake = (totalPot * rakeBps) / 10000;
+        uint256 rake = (totalPot * RAKE_BPS) / 10000;
         uint256 payout = totalPot - rake;
 
         _safeTransfer(treasury, rake);
