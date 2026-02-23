@@ -14,10 +14,12 @@ import { useName } from '@coinbase/onchainkit/identity';
 import { baseSepolia } from 'viem/chains';
 
 export function Navbar() {
-  const { login, logout, authenticated, ready } = usePrivy();
-  const { address, isConnected } = useAccount();
+  const { login, logout, authenticated, ready, user } = usePrivy();
+  const { address: wagmiAddress, isConnected } = useAccount();
   const { disconnect } = useDisconnect();
-  const { data: basename } = useName({ address, chain: baseSepolia });
+
+  const address = wagmiAddress || user?.wallet?.address;
+  const { data: basename } = useName({ address: address as `0x${string}`, chain: baseSepolia });
   
   const [mounted, setMounted] = React.useState(false);
   const [showDropdown, setShowDropdown] = useState(false);

@@ -163,7 +163,7 @@ export default function LandingPage() {
           <div className="space-y-4">
             <h2 className="text-3xl md:text-5xl font-black text-white uppercase italic tracking-tighter">
               THE FUTURE IS <br />
-              <span className="text-zinc-700">HUMAN-OPTIONAL.</span>
+              <span className="text-gold">HUMAN-OPTIONAL.</span>
             </h2>
             <p className="text-zinc-500 font-medium">
               BotByte is the infrastructure for the autonomous machine age. 

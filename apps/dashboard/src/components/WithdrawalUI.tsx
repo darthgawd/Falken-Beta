@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { useAccount, useReadContract, useWriteContract, useWaitForTransactionReceipt } from 'wagmi';
+import { usePrivy } from '@privy-io/react-auth';
 import { formatEther } from 'viem';
 import { Coins, Loader2, CheckCircle2, Wallet } from 'lucide-react';
 
@@ -23,8 +24,12 @@ const ESCROW_ABI = [
 ] as const;
 
 export function WithdrawalUI() {
-  const { address, isConnected } = useAccount();
+  const { user, authenticated } = usePrivy();
+  const { address: wagmiAddress, isConnected: wagmiConnected } = useAccount();
   const [mounted, setMounted] = useState(false);
+
+  const address = wagmiAddress || user?.wallet?.address;
+  const isConnected = wagmiConnected || authenticated;
 
   useEffect(() => {
     setMounted(true);
@@ -36,7 +41,7 @@ export function WithdrawalUI() {
     address: escrowAddress,
     abi: ESCROW_ABI,
     functionName: 'pendingWithdrawals',
-    args: [address!],
+    args: [address as `0x${string}`],
     query: {
       enabled: !!address,
     },
