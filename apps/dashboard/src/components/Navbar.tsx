@@ -10,11 +10,15 @@ import {
   ConnectWallet, 
   Wallet, 
 } from '@coinbase/onchainkit/wallet';
+import { useName } from '@coinbase/onchainkit/identity';
+
+import { baseSepolia } from 'viem/chains';
 
 export function Navbar() {
   const { login, logout, authenticated, ready } = usePrivy();
   const { address, isConnected } = useAccount();
   const { disconnect } = useDisconnect();
+  const { data: basename } = useName({ address, chain: baseSepolia });
   const [mounted, setMounted] = React.useState(false);
   const [showDropdown, setShowDropdown] = useState(false);
 
@@ -26,7 +30,7 @@ export function Navbar() {
   const displayEscrow = escrowAddress ? `${escrowAddress.slice(0, 6)}...${escrowAddress.slice(-4)}` : 'No Contract';
 
   const isLoggedIn = authenticated || isConnected;
-  const displayAddress = address ? `${address.slice(0, 6)}...${address.slice(-4)}` : '';
+  const displayAddress = basename || (address ? `${address.slice(0, 6)}...${address.slice(-4)}` : '');
 
   const handleLogout = async () => {
     setShowDropdown(false); // Close dropdown immediately
