@@ -40,7 +40,7 @@ export function Providers({ children }: { children: ReactNode }) {
     <PrivyProvider
       appId={appId}
       config={{
-        loginMethods: ['email', 'wallet', 'google', 'twitter', 'farcaster'],
+        loginMethods: ['email', 'wallet', 'google', 'twitter', 'github', 'farcaster'],
         appearance: {
           theme: 'dark',
           accentColor: '#3b82f6', // blue-500
