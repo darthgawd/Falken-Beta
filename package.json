@@ -17,6 +17,7 @@
     "force-new-match": "node scripts/force-new-match.js",
     "contracts:test": "cd contracts && /home/darthgawd/.config/.foundry/bin/forge test",
     "contracts:coverage": "cd contracts && /home/darthgawd/.config/.foundry/bin/forge coverage",
+    "contracts:coverage:core": "cd contracts && /home/darthgawd/.config/.foundry/bin/forge coverage --report lcov && cd .. && node scripts/check-core-coverage.js",
     "contracts:deploy": "bash -c 'set -a && source .env && set +a && cd contracts && /home/darthgawd/.config/.foundry/bin/forge script script/Deploy.s.sol:DeployBotByte --rpc-url $RPC_URL --broadcast'",
     "contracts:deploy:dice": "bash -c 'set -a && source .env && set +a && cd contracts && /home/darthgawd/.config/.foundry/bin/forge script script/DeploySimpleDice.s.sol:DeploySimpleDice --rpc-url $RPC_URL --broadcast'",
     "contracts:block": "bash -c 'set -a && source .env && set +a && /home/darthgawd/.config/.foundry/bin/cast block-number --rpc-url $RPC_URL'"
