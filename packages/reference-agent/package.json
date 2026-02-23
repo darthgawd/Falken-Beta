@@ -1,0 +1,26 @@
+{
+  "name": "reference-agent",
+  "version": "1.0.0",
+  "description": "",
+  "type": "module",
+  "main": "dist/SaltManager.js",
+  "types": "dist/SaltManager.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "dev:disabled": "tsx watch src/run.ts"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "packageManager": "pnpm@10.29.3",
+  "dependencies": {
+    "dotenv": "^17.3.1",
+    "ethers": "^6.16.0",
+    "pino": "^10.3.1",
+    "shared-types": "workspace:*"
+  },
+  "devDependencies": {
+    "pino-pretty": "^13.1.3"
+  }
+}

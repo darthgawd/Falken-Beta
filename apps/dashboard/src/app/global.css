@@ -1,0 +1,37 @@
+@import "tailwindcss";
+
+:root {
+  --background: #000000;
+  --foreground: #ffffff;
+}
+
+body {
+  color: var(--foreground);
+  background-color: #000000;
+  font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+  
+  /* True Dark Chessboard Effect */
+  background-image: 
+    linear-gradient(45deg, rgba(39, 39, 42, 0.15) 25%, transparent 25%), 
+    linear-gradient(-45deg, rgba(39, 39, 42, 0.15) 25%, transparent 25%), 
+    linear-gradient(45deg, transparent 75%, rgba(39, 39, 42, 0.15) 75%), 
+    linear-gradient(-45deg, transparent 75%, rgba(39, 39, 42, 0.15) 75%);
+  background-size: 80px 80px;
+  background-position: 0 0, 0 40px, 40px -40px, -40px 0px;
+  background-attachment: fixed;
+}
+
+@layer base {
+  * {
+    @apply border-zinc-800;
+  }
+}
+
+/* Privy Modal Fix for Tailwind v4/Turbopack */
+#privy-modal {
+  z-index: 99999 !important;
+}
+
+#privy-modal > div {
+  z-index: 100000 !important;
+}

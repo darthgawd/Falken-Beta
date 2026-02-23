@@ -1,0 +1,21 @@
+# Node
+node_modules
+dist
+.next
+.turbo
+out
+build
+
+# Env & Secrets
+.env
+.env.local
+salts.json
+*.pem
+
+# DS Store
+.DS_Store
+
+# Foundry
+out
+cache
+broadcast

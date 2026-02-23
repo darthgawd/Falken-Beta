@@ -1,0 +1,12 @@
+node_modules
+.next
+dist
+out
+.turbo
+contracts/cache
+contracts/out
+.env
+.env.local
+*.log
+lcov.info
+coverage_report

@@ -1,0 +1,42 @@
+version: '3.8'
+
+services:
+  # The Real-time Blockchain Listener
+  indexer:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    command: pnpm indexer:start
+    env_file: .env
+    restart: always
+
+  # The Autonomous Liquidity Provider
+  house-bot:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    command: pnpm housebot:start
+    env_file: .env
+    restart: always
+
+  # The HTTP Gateway for AI Agents (Claude/ChatGPT)
+  mcp-proxy:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    command: pnpm proxy:start
+    ports:
+      - "3001:3001"
+    env_file: .env
+    restart: always
+
+  # Optional: Dashboard (You can also host this on Vercel)
+  # dashboard:
+  #   build: 
+  #     context: .
+  #     dockerfile: Dockerfile
+  #   command: pnpm dashboard:start
+  #   ports:
+  #     - "3000:3000"
+  #   env_file: .env
+  #   restart: always

@@ -1,0 +1,27 @@
+{
+  "name": "house-bot",
+  "version": "1.0.0",
+  "description": "",
+  "type": "module",
+  "main": "dist/HouseBot.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/HouseBot.js",
+    "dev": "tsx watch src/HouseBot.ts"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "packageManager": "pnpm@10.29.3",
+  "dependencies": {
+    "@supabase/supabase-js": "^2.97.0",
+    "dotenv": "^17.3.1",
+    "ethers": "^6.16.0",
+    "pino": "^10.3.1",
+    "reference-agent": "workspace:*",
+    "shared-types": "workspace:*"
+  },
+  "devDependencies": {
+    "pino-pretty": "^13.1.3"
+  }
+}

@@ -1,0 +1,9 @@
+version: "2"
+authtoken: YOUR_AUTHTOKEN_HERE
+
+tunnels:
+  botbyte-arena:
+    proto: http
+    addr: 3001
+    schemes:
+      - https

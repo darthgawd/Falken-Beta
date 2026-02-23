@@ -1,0 +1,37 @@
+{
+  "name": "agp",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "build": "turbo build",
+    "indexer:start": "pnpm -F indexer start",
+    "mcp:start": "pnpm -F mcp-server start",
+    "proxy:start": "pnpm -F mcp-proxy start",
+    "housebot:start": "pnpm -F house-bot start",
+    "agent:start": "pnpm -F reference-agent dev",
+    "dashboard:dev": "pnpm -F dashboard dev",
+    "dev:all": "turbo dev",
+    "generate-wallet": "pnpm exec node scripts/generate-wallet.js",
+    "generate-openapi": "node scripts/generate-openapi.js",
+    "force-new-match": "node scripts/force-new-match.js",
+    "contracts:test": "cd contracts && /home/darthgawd/.config/.foundry/bin/forge test",
+    "contracts:coverage": "cd contracts && /home/darthgawd/.config/.foundry/bin/forge coverage",
+    "contracts:deploy": "bash -c 'set -a && source .env && set +a && cd contracts && /home/darthgawd/.config/.foundry/bin/forge script script/Deploy.s.sol:DeployBotByte --rpc-url $RPC_URL --broadcast'",
+    "contracts:deploy:dice": "bash -c 'set -a && source .env && set +a && cd contracts && /home/darthgawd/.config/.foundry/bin/forge script script/DeploySimpleDice.s.sol:DeploySimpleDice --rpc-url $RPC_URL --broadcast'",
+    "contracts:block": "bash -c 'set -a && source .env && set +a && /home/darthgawd/.config/.foundry/bin/cast block-number --rpc-url $RPC_URL'"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "packageManager": "pnpm@10.29.3",
+  "devDependencies": {
+    "@types/node": "^25.3.0",
+    "dotenv": "^17.3.1",
+    "ethers": "^6.16.0",
+    "ts-node": "^10.9.2",
+    "tsx": "^4.21.0",
+    "turbo": "^2.8.10",
+    "typescript": "^5.9.3"
+  }
+}
