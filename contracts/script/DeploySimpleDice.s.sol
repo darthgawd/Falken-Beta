@@ -17,7 +17,7 @@ contract DeploySimpleDice is Script {
         console.log("SimpleDice Logic deployed at:", address(dice));
 
         // 2. Get MatchEscrow instance
-        MatchEscrow escrow = MatchEscrow(escrowAddress);
+        MatchEscrow escrow = MatchEscrow(payable(escrowAddress));
 
         // 3. Whitelist SimpleDice Logic
         escrow.approveGameLogic(address(dice), true);

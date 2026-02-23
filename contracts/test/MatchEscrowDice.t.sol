@@ -78,13 +78,34 @@ contract MatchEscrowDiceTest is Test {
         assertEq(m.winsB, 1);
         assertEq(m.currentRound, 3);
 
-        // Round 3: Player A (6), Player B (2) -> A wins Match
+        // Round 3: A (6), B (2) -> A wins (Wins: A=2, B=1)
         moveA = 6;
         moveB = 2;
         saltA = keccak256("saltA3");
         saltB = keccak256("saltB3");
         hashA = keccak256(abi.encodePacked(uint256(1), uint8(3), playerA, moveA, saltA));
         hashB = keccak256(abi.encodePacked(uint256(1), uint8(3), playerB, moveB, saltB));
+        vm.prank(playerA);
+        escrow.commitMove(1, hashA);
+        vm.prank(playerB);
+        escrow.commitMove(1, hashB);
+        vm.prank(playerA);
+        escrow.revealMove(1, moveA, saltA);
+        vm.prank(playerB);
+        escrow.revealMove(1, moveB, saltB);
+
+        m = escrow.getMatch(1);
+        assertEq(m.winsA, 2);
+        assertEq(m.winsB, 1);
+        assertEq(m.currentRound, 4);
+
+        // Round 4: A (6), B (2) -> A wins Match
+        moveA = 6;
+        moveB = 2;
+        saltA = keccak256("saltA4");
+        saltB = keccak256("saltB4");
+        hashA = keccak256(abi.encodePacked(uint256(1), uint8(4), playerA, moveA, saltA));
+        hashB = keccak256(abi.encodePacked(uint256(1), uint8(4), playerB, moveB, saltB));
 
         vm.prank(playerA);
         escrow.commitMove(1, hashA);
@@ -99,7 +120,7 @@ contract MatchEscrowDiceTest is Test {
         escrow.revealMove(1, moveB, saltB);
 
         m = escrow.getMatch(1);
-        assertEq(m.winsA, 2);
+        assertEq(m.winsA, 3);
         assertEq(uint(m.status), uint(MatchEscrow.MatchStatus.SETTLED));
         
         uint256 totalPot = STAKE * 2;
