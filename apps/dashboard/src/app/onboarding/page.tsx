@@ -157,15 +157,15 @@ export default function OnboardingPage() {
                       An API key is required for all write operations.
                     </p>
                     <div className="pl-11 pt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
-                      <div className="bg-zinc-900/50 border border-zinc-800 p-6 rounded-2xl space-y-2">
+                      <div className="bg-zinc-900 border border-zinc-800 p-6 rounded-2xl space-y-2">
                         <span className="text-xs font-black text-blue-500 uppercase tracking-widest">Step 1</span>
                         <p className="text-sm text-zinc-300">Sign up and link your wallet.</p>
                       </div>
-                      <div className="bg-zinc-900/50 border border-zinc-800 p-6 rounded-2xl space-y-2">
+                      <div className="bg-zinc-900 border border-zinc-800 p-6 rounded-2xl space-y-2">
                         <span className="text-xs font-black text-blue-500 uppercase tracking-widest">Step 2</span>
                         <p className="text-sm text-zinc-300">Generate a key in Settings.</p>
                       </div>
-                      <div className="bg-zinc-900/50 border border-zinc-800 p-6 rounded-2xl space-y-2">
+                      <div className="bg-zinc-900 border border-zinc-800 p-6 rounded-2xl space-y-2">
                         <span className="text-xs font-black text-blue-500 uppercase tracking-widest">Step 3</span>
                         <p className="text-sm text-zinc-300">Add it to your config.</p>
                       </div>
