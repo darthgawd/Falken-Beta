@@ -3,7 +3,7 @@
 import React from 'react';
 import { Shield, LogOut, Settings, UserPlus } from 'lucide-react';
 import { usePrivy } from '@privy-io/react-auth';
-import { useAccount } from 'wagmi';
+import { useAccount, useDisconnect } from 'wagmi';
 import { WithdrawalUI } from './WithdrawalUI';
 import Link from 'next/link';
 import { 
@@ -23,6 +23,7 @@ import {
 export function Navbar() {
   const { login, logout, authenticated, ready } = usePrivy();
   const { isConnected } = useAccount();
+  const { disconnect } = useDisconnect();
   const [mounted, setMounted] = React.useState(false);
 
   React.useEffect(() => {
@@ -35,6 +36,17 @@ export function Navbar() {
   // We are "logged in" if either Privy is authenticated OR a wallet is connected via Wagmi
   const isLoggedIn = authenticated || isConnected;
 
+  const handleLogout = async () => {
+    // 1. Log out from Privy
+    if (authenticated) {
+      await logout();
+    }
+    // 2. Disconnect from Wagmi/Coinbase
+    if (isConnected) {
+      disconnect();
+    }
+  };
+
   return (
     <nav className="border-b border-zinc-800 bg-black/50 backdrop-blur-md sticky top-0 z-50 h-16">
       <div className="max-w-7xl mx-auto px-4 h-full flex items-center justify-between">
@@ -44,10 +56,10 @@ export function Navbar() {
         </Link>
 
         <div className="flex items-center gap-6">
-          <Link href="/" className="text-xs font-bold text-zinc-500 hover:text-white transition-colors uppercase tracking-widest">
+          <Link href="/" className="text-xs font-bold text-zinc-500 hover:text-white transition-colors uppercase tracking-widest text-nowrap">
             Arena
           </Link>
-          <Link href="/developer" className="text-xs font-bold text-zinc-500 hover:text-white transition-colors uppercase tracking-widest">
+          <Link href="/developer" className="text-xs font-bold text-zinc-500 hover:text-white transition-colors uppercase tracking-widest text-nowrap">
             Developer
           </Link>
           
@@ -87,11 +99,11 @@ export function Navbar() {
                     <Avatar className="h-6 w-6" />
                     <Name />
                   </ConnectWallet>
-                  <WalletDropdown className="bg-zinc-900 border border-zinc-800 rounded-2xl shadow-2xl p-2 mt-2">
+                  <WalletDropdown className="bg-zinc-900 border border-zinc-800 rounded-2xl shadow-2xl p-2 mt-2 min-w-[240px]">
                     <Identity className="px-4 pt-3 pb-2" hasCopyAddressOnClick>
                       <Avatar />
                       <Name />
-                      <Address />
+                      <Address className="text-zinc-500" />
                       <EthBalance />
                     </Identity>
                     <div className="p-2 space-y-1">
@@ -102,8 +114,9 @@ export function Navbar() {
                         <Settings className="w-4 h-4" />
                         Settings
                       </Link>
+                      {/* Unified Disconnect */}
                       <button 
-                        onClick={logout}
+                        onClick={handleLogout}
                         className="flex items-center gap-3 w-full px-4 py-2 hover:bg-red-500/10 rounded-lg text-zinc-500 hover:text-red-500 transition-colors text-sm font-medium"
                       >
                         <LogOut className="w-4 h-4" />
