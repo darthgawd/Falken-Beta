@@ -34,6 +34,7 @@ contract MatchEscrow is ReentrancyGuard, Ownable, Pausable {
 
     uint256 public matchCounter;
     uint256 public constant RAKE_BPS = 500; // 5%
+    uint256 public constant MIN_STAKE_USD = 5; // $5 USD Floor
     address public treasury;
     AggregatorV3Interface public immutable priceFeed;
 
@@ -76,8 +77,25 @@ contract MatchEscrow is ReentrancyGuard, Ownable, Pausable {
         return (_usdAmount * 1e8) / uint256(price);
     }
 
+    /**
+     * @notice Returns the USD value of a given ETH amount (18 decimals).
+     */
+    function getUsdValue(uint256 _ethAmount) public view returns (uint256) {
+        (, int256 price,,,) = priceFeed.latestRoundData();
+        require(price > 0, "Invalid price");
+        
+        // price has 8 decimals. ethAmount has 18.
+        // Result should be USD with 18 decimals.
+        return (_ethAmount * uint256(price)) / 1e8;
+    }
+
     function createMatch(uint256 _stake, address _gameLogic) public payable nonReentrant whenNotPaused {
         require(msg.value == _stake, "Incorrect stake amount");
+        
+        // Enforce $5 USD Floor
+        uint256 usdValue = getUsdValue(_stake);
+        require(usdValue >= MIN_STAKE_USD * 1e18, "Stake below $5 USD minimum");
+
         _createMatch(_stake, _gameLogic);
     }
 

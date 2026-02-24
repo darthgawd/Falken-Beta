@@ -59,6 +59,30 @@ const walletClient = agentAccount
   : null;
 
 const ESCROW_ADDRESS = (process.env.ESCROW_ADDRESS || '0x0000000000000000000000000000000000000000').toLowerCase() as `0x${string}`;
+const PRICE_FEED_ADDRESS = '0x4adC67696ba3F238D520607D003F756024f60C77' as `0x${string}`;
+
+const AGGREGATOR_ABI = [
+  { name: 'latestRoundData', type: 'function', stateMutability: 'view', inputs: [], outputs: [{ name: 'roundId', type: 'uint80' }, { name: 'answer', type: 'int256' }, { name: 'startedAt', type: 'uint256' }, { name: 'updatedAt', type: 'uint256' }, { name: 'answeredInRound', type: 'uint80' }] }
+] as const;
+
+/**
+ * Converts USD amount to Wei using the live Chainlink Price Feed.
+ */
+async function usdToWei(usdAmount: number): Promise<bigint> {
+  const data = await publicClient.readContract({
+    address: PRICE_FEED_ADDRESS,
+    abi: AGGREGATOR_ABI,
+    functionName: 'latestRoundData',
+  });
+  
+  const ethPrice = data[1]; // 8 decimals
+  if (ethPrice <= 0n) throw new Error('Invalid price from oracle');
+
+  // Formula: (usdAmount * 1e18 * 1e8) / ethPrice
+  // We use 1e18 because usdAmount is a standard number (e.g. 5.00)
+  const usdAmountBig = BigInt(Math.floor(usdAmount * 1e8));
+  return (usdAmountBig * 1e18) / ethPrice;
+}
 
 logger.info({ 
   escrow: ESCROW_ADDRESS, 
@@ -138,7 +162,7 @@ export const TOOLS = [
   { name: 'find_matches', description: 'Finds open matches.', inputSchema: { type: 'object', properties: { gameType: { type: 'string' }, stakeTier: { type: 'string' } } } },
   { name: 'get_game_rules', description: 'Returns move labels for a game.', inputSchema: { type: 'object', properties: { logicAddress: { type: 'string' } }, required: ['logicAddress'] } },
   { name: 'sync_match_state', description: 'Match state + action.', inputSchema: { type: 'object', properties: { matchId: { type: 'string' }, playerAddress: { type: 'string' } }, required: ['matchId', 'playerAddress'] } },
-  { name: 'prep_create_match_tx', description: 'Step 1: Create a new match by depositing stake. Requires approval of game logic first.', inputSchema: { type: 'object', properties: { stakeWei: { type: 'string' }, gameLogicAddress: { type: 'string' }, playerAddress: { type: 'string' } }, required: ['stakeWei', 'gameLogicAddress', 'playerAddress'] } },
+  { name: 'prep_create_match_tx', description: 'Step 1: Create a new match. Minimum stake is $5.00 USD worth of ETH.', inputSchema: { type: 'object', properties: { stakeETH: { type: 'number', description: 'Amount in ETH, e.g. 0.01' }, gameLogicAddress: { type: 'string' }, playerAddress: { type: 'string' } }, required: ['stakeETH', 'gameLogicAddress', 'playerAddress'] } },
   { name: 'prep_join_match_tx', description: 'Step 2: Join an existing OPEN match. Call this before commitMove if you are Player B.', inputSchema: { type: 'object', properties: { matchId: { type: 'string' }, playerAddress: { type: 'string' } }, required: ['matchId', 'playerAddress'] } },
   { name: 'prep_commit_tx', description: 'Step 3: Submit a hashed secret move to an ACTIVE match. Match status must be ACTIVE.', inputSchema: { type: 'object', properties: { matchId: { type: 'string' }, playerAddress: { type: 'string' }, move: { type: 'number' } }, required: ['matchId', 'playerAddress', 'move'] } },
   { name: 'prep_reveal_tx', description: 'Step 4: Reveal your move after both players have committed. Use the salt from your persistence layer.', inputSchema: { type: 'object', properties: { matchId: { type: 'string' }, move: { type: 'number' }, salt: { type: 'string' }, playerAddress: { type: 'string' } }, required: ['matchId', 'move', 'salt', 'playerAddress'] } },
@@ -275,8 +299,16 @@ export async function handleToolCall(name: string, args: any) {
   }
 
   if (name === 'prep_create_match_tx') {
-    const { stakeWei, gameLogicAddress, playerAddress } = (args || {}) as { stakeWei: string; gameLogicAddress: string; playerAddress: string };
-    return await prepTxWithBuffer('createMatch', [BigInt(stakeWei), gameLogicAddress as `0x${string}`], BigInt(stakeWei), playerAddress as `0x${string}`);
+    const { stakeETH, gameLogicAddress, playerAddress } = (args || {}) as { stakeETH: number; gameLogicAddress: string; playerAddress: string };
+    const stakeWei = BigInt(Math.floor(stakeETH * 1e18));
+    
+    // Verify $5 Minimum Floor
+    const minWei = await usdToWei(5);
+    if (stakeWei < minWei) {
+      throw new Error(`Stake too low. Minimum required: $5.00 USD (~${(Number(minWei) / 1e18).toFixed(6)} ETH)`);
+    }
+
+    return await prepTxWithBuffer('createMatch', [stakeWei, gameLogicAddress as `0x${string}`], stakeWei, playerAddress as `0x${string}`);
   }
 
   if (name === 'prep_commit_tx') {
