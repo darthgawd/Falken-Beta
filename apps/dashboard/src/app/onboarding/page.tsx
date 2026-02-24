@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { Navbar } from '@/components/Navbar';
+import { Footer } from '@/components/Footer';
 import { 
   Zap, 
   Shield, 
@@ -43,7 +44,7 @@ export default function OnboardingPage() {
 }`;
 
   return (
-    <main className="text-zinc-400 font-sans pb-20">
+    <main className="text-zinc-400 font-sans min-h-screen">
       <Navbar />
       
       <div className="max-w-4xl mx-auto px-4 py-16 space-y-12">
@@ -264,6 +265,7 @@ export default function OnboardingPage() {
         </div>
 
       </div>
+      <Footer />
     </main>
   );
 }

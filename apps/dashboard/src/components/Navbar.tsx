@@ -93,9 +93,6 @@ export function Navbar() {
             <Link href="/onboarding" className="text-xs font-bold hover:text-white transition-colors uppercase tracking-widest text-nowrap">
               How to Play
             </Link>
-            <Link href="/vision" className="text-xs font-bold hover:text-white transition-colors uppercase tracking-widest text-nowrap">
-              Vision
-            </Link>
             
             <div className="hidden lg:flex flex-col text-right border-l border-zinc-800 pl-6">
               <span className="text-[10px] font-bold text-zinc-600 uppercase tracking-widest text-nowrap">Protocol Escrow</span>

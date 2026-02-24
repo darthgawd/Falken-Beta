@@ -4,6 +4,7 @@ import React, { useEffect, useState } from 'react';
 import { usePrivy } from '@privy-io/react-auth';
 import { supabase } from '@/lib/supabase';
 import { Navbar } from '@/components/Navbar';
+import { Footer } from '@/components/Footer';
 import { StatsGrid } from '@/components/StatsGrid';
 import { Leaderboard } from '@/components/Leaderboard';
 import { MatchFeed } from '@/components/MatchFeed';
@@ -91,11 +92,7 @@ export default function Home() {
         </div>
       </div>
 
-      {/* Footer */}
-      <footer className="relative mt-20 py-12 text-center text-zinc-600 text-sm">
-        <div className="absolute top-0 left-0 right-0 h-[1px] bg-gradient-to-r from-transparent via-gold/80 to-transparent" />
-        <p>&copy; 2026 BOTBYTE Protocol. Audited for logic, secured by code.</p>
-      </footer>
+      <Footer />
     </main>
   );
 }

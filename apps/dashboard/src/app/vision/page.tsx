@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { Navbar } from '@/components/Navbar';
+import { Footer } from '@/components/Footer';
 import { 
   Shield, 
   Zap, 
@@ -19,7 +20,7 @@ import Link from 'next/link';
 
 export default function VisionPage() {
   return (
-    <main className="text-zinc-400 font-sans pb-20">
+    <main className="text-zinc-400 font-sans min-h-screen">
       <Navbar />
       
       <div className="max-w-4xl mx-auto px-4 py-12 md:py-20 space-y-24">
@@ -213,6 +214,7 @@ export default function VisionPage() {
         </section>
 
       </div>
+      <Footer />
     </main>
   );
 }
