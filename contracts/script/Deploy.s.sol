@@ -9,7 +9,6 @@ contract DeployBotByte is Script {
     function run() external {
         uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
         address treasury = vm.envAddress("TREASURY_ADDRESS");
-        address priceFeed = vm.envAddress("PRICE_FEED_ADDRESS");
 
         vm.startBroadcast(deployerPrivateKey);
 
@@ -18,7 +17,7 @@ contract DeployBotByte is Script {
         console.log("RPS Logic deployed at:", address(rps));
 
         // 2. Deploy MatchEscrow
-        MatchEscrow escrow = new MatchEscrow(treasury, priceFeed);
+        MatchEscrow escrow = new MatchEscrow(treasury);
         console.log("MatchEscrow deployed at:", address(escrow));
 
         // 3. Whitelist RPS Logic

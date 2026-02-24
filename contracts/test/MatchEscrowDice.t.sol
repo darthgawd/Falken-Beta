@@ -15,7 +15,7 @@ contract MatchEscrowDiceTest is Test {
     uint256 public constant STAKE = 1 ether;
 
     function setUp() public {
-        escrow = new MatchEscrow(treasury, address(0x4adC67696ba3F238D520607D003f756024f60C77));
+        escrow = new MatchEscrow(treasury);
         dice = new SimpleDice();
         escrow.approveGameLogic(address(dice), true);
         vm.deal(playerA, 10 ether);
