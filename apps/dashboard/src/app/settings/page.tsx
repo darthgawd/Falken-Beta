@@ -3,13 +3,20 @@
 import { usePrivy } from '@privy-io/react-auth';
 import { Navbar } from '@/components/Navbar';
 import { Footer } from '@/components/Footer';
-import { Shield, Settings as SettingsIcon, Layout, Key, User } from 'lucide-react';
+import { Shield, Settings as SettingsIcon, Layout, Key, User, CheckCircle2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
 import { useRouter } from 'next/navigation';
 import { useAccount } from 'wagmi';
 import { useName } from '@coinbase/onchainkit/identity';
 import { baseSepolia } from 'viem/chains';
+
+const AVATARS = [
+  { id: 'architect', url: 'https://images.unsplash.com/photo-1614850523296-d8c1af93d400?q=80&w=200&h=200&auto=format&fit=crop', name: 'The Architect' },
+  { id: 'enforcer', url: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?q=80&w=200&h=200&auto=format&fit=crop', name: 'The Enforcer' },
+  { id: 'specialist', url: 'https://images.unsplash.com/photo-1620641788421-7a1c342ea42e?q=80&w=200&h=200&auto=format&fit=crop', name: 'The Specialist' },
+  { id: 'ghost', url: 'https://images.unsplash.com/photo-1634017839464-5c339ebe3cb4?q=80&w=200&h=200&auto=format&fit=crop', name: 'The Ghost' },
+];
 
 export default function SettingsPage() {
   const { authenticated, user, login, logout, ready } = usePrivy();
@@ -29,9 +36,9 @@ export default function SettingsPage() {
   const [newKey, setNewKey] = useState<string | null>(null);
   const [nickname, setNickname] = useState('');
   const [bio, setBio] = useState('');
+  const [avatarUrl, setAvatarUrl] = useState('');
 
   const isUserAuthenticated = authenticated || isConnected;
-  // robust check: wait for both Privy and Wagmi to finish their internal checks
   const isAuthInitializing = !mounted || !ready || wagmiStatus === 'connecting' || wagmiStatus === 'reconnecting';
 
   useEffect(() => {
@@ -62,6 +69,7 @@ export default function SettingsPage() {
       setProfile(profileData);
       setNickname(profileData.nickname || '');
       setBio(profileData.bio || '');
+      setAvatarUrl(profileData.avatar_url || '');
     }
 
     // 2. Fetch API Keys
@@ -83,7 +91,7 @@ export default function SettingsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthInitializing, isUserAuthenticated, address]);
 
-  // Separate effect for Basename propagation to avoid race conditions
+  // Basename propagation
   useEffect(() => {
     if (basename && !nickname && !profile?.nickname) {
       setNickname(basename);
@@ -98,6 +106,7 @@ export default function SettingsPage() {
       address: address.toLowerCase(),
       nickname,
       bio,
+      avatar_url: avatarUrl,
       updated_at: new Date().toISOString(),
     };
 
@@ -112,7 +121,6 @@ export default function SettingsPage() {
       alert('Failed to save profile. Check if nickname is taken.');
     } else {
       setProfile(data);
-      // If we didn't have an ID before, fetch keys now
       if (data.id) await fetchKeys(data.id);
     }
     setSaving(false);
@@ -133,8 +141,6 @@ export default function SettingsPage() {
     if (!label) return;
 
     const rawKey = `bb_${crypto.randomUUID().replace(/-/g, '')}`;
-    
-    // Hash the key for storage
     const msgUint8 = new TextEncoder().encode(rawKey);
     const hashBuffer = await crypto.subtle.digest('SHA-256', msgUint8);
     const hashArray = Array.from(new Uint8Array(hashBuffer));
@@ -159,17 +165,9 @@ export default function SettingsPage() {
 
   async function revokeKey(id: string) {
     if (!confirm('Are you sure you want to revoke this key? Agents using it will lose access.')) return;
-
-    const { error } = await supabase
-      .from('api_keys')
-      .delete()
-      .eq('id', id);
-
-    if (error) {
-        console.error('Error revoking key:', error);
-    } else {
-        setApiKeys(apiKeys.filter(k => k.id !== id));
-    }
+    const { error } = await supabase.from('api_keys').delete().eq('id', id);
+    if (error) console.error('Error revoking key:', error);
+    else setApiKeys(apiKeys.filter(k => k.id !== id));
   }
 
   async function handleLogout() {
@@ -256,6 +254,33 @@ export default function SettingsPage() {
               </div>
 
               <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-8 space-y-8">
+                
+                {/* Avatar Selection */}
+                <div className="space-y-4">
+                  <label className="text-xs font-bold text-zinc-500 uppercase tracking-wider">Manager Avatar</label>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                    {AVATARS.map((av) => (
+                      <button 
+                        key={av.id}
+                        onClick={() => setAvatarUrl(av.url)}
+                        className={`relative aspect-square rounded-2xl overflow-hidden border-2 transition-all ${
+                          avatarUrl === av.url ? 'border-blue-500 ring-4 ring-blue-500/20 scale-95' : 'border-zinc-800 opacity-40 hover:opacity-100 hover:border-zinc-600'
+                        }`}
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={av.url} alt={av.name} className="w-full h-full object-cover" />
+                        {avatarUrl === av.url && (
+                          <div className="absolute inset-0 bg-blue-500/10 flex items-center justify-center">
+                            <div className="bg-blue-500 rounded-full p-1">
+                              <CheckCircle2 className="w-4 h-4 text-white" />
+                            </div>
+                          </div>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                   <div className="space-y-2">
                     <label className="text-xs font-bold text-zinc-500 uppercase tracking-wider">Public Wallet</label>
