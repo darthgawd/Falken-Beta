@@ -4,7 +4,6 @@ pragma solidity ^0.8.24;
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/Pausable.sol";
-import "@chainlink/contracts/src/v0.8/shared/interfaces/AggregatorV3Interface.sol";
 import "../interfaces/IGameLogic.sol";
 
 contract MatchEscrow is ReentrancyGuard, Ownable, Pausable {
@@ -35,7 +34,6 @@ contract MatchEscrow is ReentrancyGuard, Ownable, Pausable {
     uint256 public matchCounter;
     uint256 public constant RAKE_BPS = 500; // 5%
     address public treasury;
-    AggregatorV3Interface public immutable priceFeed;
 
     mapping(uint256 => Match) public matches;
     mapping(uint256 => mapping(uint8 => mapping(address => RoundCommit))) public roundCommits;
@@ -55,49 +53,14 @@ contract MatchEscrow is ReentrancyGuard, Ownable, Pausable {
 
     uint256 public constant TIMEOUT_DURATION = 1 hours;
 
-    constructor(address _treasury, address _priceFeed) Ownable(msg.sender) {
+    constructor(address _treasury) Ownable(msg.sender) {
         require(_treasury != address(0), "Invalid treasury");
-        require(_priceFeed != address(0), "Invalid price feed");
         treasury = _treasury;
-        priceFeed = AggregatorV3Interface(_priceFeed);
     }
 
-    /**
-     * @notice Returns the amount of ETH required for a given USD amount.
-     * @param _usdAmount The amount in USD (with 18 decimals, e.g. 10 * 1e18 = $10).
-     */
-    function getEthAmount(uint256 _usdAmount) public view returns (uint256) {
-        (, int256 price,,,) = priceFeed.latestRoundData();
-        require(price > 0, "Invalid price");
-        
-        // Chainlink ETH/USD feed has 8 decimals.
-        // We want ETH (18 decimals).
-        // Formula: (usdAmount * 1e8) / ethPrice
-        return (_usdAmount * 1e8) / uint256(price);
-    }
-
-    function createMatch(uint256 _stake, address _gameLogic) public payable nonReentrant whenNotPaused {
-        require(msg.value == _stake, "Incorrect stake amount");
-        _createMatch(_stake, _gameLogic);
-    }
-
-    /**
-     * @notice Create a match by specifying a USD amount. 
-     * @param _usdAmount The USD stake per player (18 decimals).
-     */
-    function createMatchUSD(uint256 _usdAmount, address _gameLogic) external payable nonReentrant whenNotPaused {
-        uint256 requiredEth = getEthAmount(_usdAmount);
-        require(msg.value >= requiredEth, "Insufficient ETH for USD stake");
-        
-        _createMatch(requiredEth, _gameLogic);
-        
-        if (msg.value > requiredEth) {
-            _safeTransfer(msg.sender, msg.value - requiredEth);
-        }
-    }
-
-    function _createMatch(uint256 _stake, address _gameLogic) internal {
+    function createMatch(uint256 _stake, address _gameLogic) external payable nonReentrant whenNotPaused {
         require(_stake > 0, "Stake must be non-zero");
+        require(msg.value == _stake, "Incorrect stake amount");
         require(approvedGameLogic[_gameLogic], "Game logic not approved");
 
         uint256 matchId = ++matchCounter;

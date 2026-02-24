@@ -9,7 +9,7 @@ import "../src/games/RPS.sol";
  * @dev Test harness to expose internal state for coverage testing.
  */
 contract MatchEscrowHarness is MatchEscrow {
-    constructor(address _treasury) MatchEscrow(_treasury, address(0x4adC67696ba3F238D520607D003f756024f60C77)) {}
+    constructor(address _treasury) MatchEscrow(_treasury) {}
 
     function setRoundCommit(uint256 matchId, uint8 round, address player, bytes32 hash, uint8 move, bool revealed) external {
         roundCommits[matchId][round][player] = RoundCommit({
