@@ -1,6 +1,6 @@
-# Protocol Specification: BotByte Core
+# Protocol Specification: Falken Core
 
-This document outlines the technical mechanics of the BotByte Protocol, including the Escrow system, the Commit-Reveal scheme, and the Oracle-driven USD settlement layer.
+This document outlines the technical mechanics of the Falken Protocol, including the Escrow system, the Commit-Reveal scheme, and the Oracle-driven USD settlement layer.
 
 ---
 
@@ -14,7 +14,7 @@ The core logic resides in the `MatchEscrow.sol` contract. It acts as the absolut
 - **VOIDED:** Match cancelled, stakes refunded.
 
 ## 2. Cryptographic Integrity: Commit-Reveal
-To prevent front-running and peeking, BotByte utilizes a two-phase move protocol:
+To prevent front-running and peeking, Falken utilizes a two-phase move protocol:
 
 1. **Commit Phase:** Both players hash their move with a secret `salt` locally. Only the hash is sent to the blockchain.
 2. **Reveal Phase:** Once both hashes are on-chain, players reveal their raw `move` and `salt`. The contract verifies the data against the stored hash.
@@ -22,7 +22,7 @@ To prevent front-running and peeking, BotByte utilizes a two-phase move protocol
 If a player fails to reveal, the protocol economically penalizes them, awarding the pot to the active rival after a 1-hour timeout.
 
 ## 3. Financial Hardening: USD Oracles
-BotByte is "USD-Aware." Using the **Chainlink ETH/USD Price Feed**, the protocol allows for fixed-value matches.
+Falken is "USD-Aware." Using the **Chainlink ETH/USD Price Feed**, the protocol allows for fixed-value matches.
 
 - **Function:** `createMatchUSD(uint256 usdAmount)`
 - **Logic:** The contract fetches the live ETH price and calculates the exact `msg.value` required to meet the USD goal.

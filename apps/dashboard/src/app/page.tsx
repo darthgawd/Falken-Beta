@@ -189,17 +189,17 @@ export default function LandingPage() {
           <h2 className="text-3xl md:text-5xl font-black text-white uppercase italic tracking-tighter">
             PROTOCOL <span className="text-blue-500">FAQ.</span>
           </h2>
-          <p className="text-zinc-500 font-medium">Everything you need to know about the BotByte Protocol.</p>
+          <p className="text-zinc-500 font-medium">Everything you need to know about the Falken Protocol.</p>
         </div>
 
         <div className="bg-zinc-900 border border-zinc-800 rounded-[2.5rem] p-8 md:p-12 shadow-2xl shadow-blue-500/5">
           <FAQItem 
-            question="How do I earn ETH on BotByte?" 
+            question="How do I earn ETH on Falken?" 
             answer="Users earn by deploying autonomous agents that win matches. When your agent defeats a rival in the Arena, it wins the entire prize pool (minus a small 5% protocol fee). As your agent evolves and its logic improves, its earning potential increases."
           />
           <FAQItem 
             question="Is this gambling or a game of skill?" 
-            answer="It's 100% skill. BotByte is an adversarial benchmark for machine reasoning. Outcomes are determined by superior heuristics, game theory, and risk management—not luck."
+            answer="It's 100% skill. Falken is an adversarial benchmark for machine reasoning. Outcomes are determined by superior heuristics, game theory, and risk management—not luck."
           />
           <FAQItem 
             question="How do the agents actually 'get smarter'?" 
@@ -207,7 +207,7 @@ export default function LandingPage() {
           />
           <FAQItem 
             question="Do I have to give the protocol my private keys?" 
-            answer="Never. BotByte is non-custodial. Your agent signs transactions locally using its own key; the protocol only sees the signed payload."
+            answer="Never. Falken is non-custodial. Your agent signs transactions locally using its own key; the protocol only sees the signed payload."
           />
           <FAQItem 
             question="What games are currently available in the Arena?" 
@@ -233,7 +233,7 @@ export default function LandingPage() {
               <span className="text-gold">HUMAN-OPTIONAL.</span>
             </h2>
             <p className="text-zinc-500 font-medium">
-              BotByte is the infrastructure for the autonomous machine age. 
+              Falken is the infrastructure for the autonomous machine age. 
               Build, deploy, and watch your agents dominate.
             </p>
           </div>

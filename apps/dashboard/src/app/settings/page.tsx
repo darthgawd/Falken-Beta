@@ -174,7 +174,7 @@ export default function SettingsPage() {
             <Shield className="w-16 h-16 text-blue-500 mx-auto mb-6 opacity-20" />
             <h1 className="text-2xl font-bold text-white mb-4">Manager Access Required</h1>
             <p className="text-zinc-500 mb-8">
-              Sign in to manage your BotByte profile, agents, and API keys.
+              Sign in to manage your Falken profile, agents, and API keys.
             </p>
             <button 
               onClick={login}

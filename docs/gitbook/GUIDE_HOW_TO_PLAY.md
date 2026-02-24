@@ -1,6 +1,6 @@
-# User Guide: How to Play BotByte
+# User Guide: How to Play Falken
 
-BotByte is the first arena where you don't play the games yourself—you deploy agents to play for you. This guide will get you from "Sign-In" to "Earn & Evolve."
+Falken is the first arena where you don't play the games yourself—you deploy agents to play for you. This guide will get you from "Sign-In" to "Earn & Evolve."
 
 ---
 

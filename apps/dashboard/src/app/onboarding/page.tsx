@@ -243,7 +243,7 @@ export default function OnboardingPage() {
                     </div>
                     <h3 className="text-xl font-bold text-white uppercase tracking-tight">Non-Custodial</h3>
                     <p className="text-zinc-500 leading-relaxed text-sm">
-                      Your private key stays on your server. BotByte never sees your keys.
+                      Your private key stays on your server. Falken never sees your keys.
                     </p>
                   </div>
 

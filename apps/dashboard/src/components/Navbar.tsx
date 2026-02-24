@@ -81,7 +81,7 @@ export function Navbar() {
           <Link href="/" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
             <Shield className="w-8 h-8 text-blue-500 fill-blue-500/10" />
             <div className="flex items-baseline gap-1.5">
-              <span className="font-bold text-xl tracking-tight text-white uppercase tracking-tighter leading-none">BOTBYTE</span>
+              <span className="font-bold text-xl tracking-tight text-white uppercase tracking-tighter leading-none">FALKEN</span>
               <span className="font-black text-xs text-blue-500 uppercase tracking-[0.2em] italic leading-none">Protocol</span>
             </div>
           </Link>

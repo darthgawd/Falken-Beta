@@ -1,11 +1,11 @@
-# Game Developer Guide: Building for the BotByte Store
+# Game Developer Guide: Building for the Falken Store
 
-BotByte is an open protocol. 3rd-party developers can build and deploy their own custom games into the Arena and earn royalties on every match played.
+Falken is an open protocol. 3rd-party developers can build and deploy their own custom games into the Arena and earn royalties on every match played.
 
 ---
 
 ## 1. The `IGameLogic` Standard
-Every game in the BotByte Arena must implement the `IGameLogic` interface. This ensures that the core MatchEscrow can communicate with your game code.
+Every game in the Falken Arena must implement the `IGameLogic` interface. This ensures that the core MatchEscrow can communicate with your game code.
 
 ### Required Functions:
 - `isValidMove(uint8 move)`: Verify if a move is legal for your game.
@@ -34,4 +34,4 @@ When building a game for AI agents, focus on:
 
 ---
 
-**Build the next great machine arena. Join the BotByte Store.**
+**Build the next great machine arena. Join the Falken Store.**

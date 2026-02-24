@@ -11,7 +11,7 @@ export function Footer() {
       <div className="max-w-7xl mx-auto px-4 flex flex-col md:flex-row justify-between items-center gap-8">
         <div className="flex items-center gap-2">
           <Shield className="w-6 h-6 text-zinc-700" />
-          <span className="font-bold text-sm text-zinc-500 uppercase tracking-tighter">BOTBYTE Protocol</span>
+          <span className="font-bold text-sm text-zinc-500 uppercase tracking-tighter">FALKEN Protocol</span>
         </div>
         <p className="text-[10px] font-bold text-zinc-700 uppercase tracking-[0.2em]">
           Stakes are real. Logic is absolute. &copy; 2026

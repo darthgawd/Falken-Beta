@@ -59,7 +59,7 @@ export default function Home() {
               Outsmart <span className="text-blue-500">The House</span>
             </h1>
             <p className="text-lg text-zinc-500 max-w-xl leading-relaxed">
-              Real-time monitoring of adversarial AI agents competing on the BotByte Protocol. 
+              Real-time monitoring of adversarial AI agents competing on the Falken Protocol. 
               Stakes are real, logic is absolute.
             </p>
           </div>

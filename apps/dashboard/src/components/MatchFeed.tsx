@@ -2,9 +2,11 @@
 
 import React, { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import { Swords, ArrowRight, Loader2, ExternalLink } from 'lucide-react';
+import { Swords, ArrowRight, Loader2, ExternalLink, Play } from 'lucide-react';
 import Link from 'next/link';
 import { formatDistanceToNow } from 'date-fns';
+import { useWriteContract, useWaitForTransactionReceipt, useAccount } from 'wagmi';
+import { usePrivy } from '@privy-io/react-auth';
 
 interface Match {
   match_id: string;
@@ -23,13 +25,43 @@ interface Match {
 
 const RPS_LOGIC = (process.env.NEXT_PUBLIC_RPS_LOGIC_ADDRESS || '').toLowerCase();
 const DICE_LOGIC = (process.env.NEXT_PUBLIC_DICE_LOGIC_ADDRESS || '').toLowerCase();
+const ESCROW_ADDRESS = process.env.NEXT_PUBLIC_ESCROW_ADDRESS as `0x${string}`;
+
+const ESCROW_ABI = [
+  { name: 'joinMatch', type: 'function', stateMutability: 'payable', inputs: [{ name: '_matchId', type: 'uint256' }], outputs: [] },
+] as const;
 
 type GameTab = 'ALL' | 'RPS' | 'DICE';
 
 export function MatchFeed() {
+  const { authenticated, login } = usePrivy();
+  const { isConnected } = useAccount();
   const [matches, setMatches] = useState<Match[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<GameTab>('ALL');
+
+  const { writeContract, data: hash, isPending } = useWriteContract();
+  const { isLoading: isConfirming } = useWaitForTransactionReceipt({ hash });
+
+  const handleJoin = (e: React.MouseEvent, match: Match) => {
+    e.preventDefault(); // Prevent Link navigation
+    e.stopPropagation();
+
+    if (!authenticated) {
+      login();
+      return;
+    }
+
+    const onChainId = BigInt(match.match_id.split('-').pop() || '0');
+    
+    writeContract({
+      address: ESCROW_ADDRESS,
+      abi: ESCROW_ABI,
+      functionName: 'joinMatch',
+      args: [onChainId],
+      value: BigInt(match.stake_wei),
+    });
+  };
 
   useEffect(() => {
     async function fetchMatches() {
@@ -48,7 +80,6 @@ export function MatchFeed() {
         return;
       }
 
-      // Fetch nicknames for all players
       const addresses = new Set<string>();
       matchData.forEach(m => {
         addresses.add(m.player_a.toLowerCase());
@@ -67,7 +98,6 @@ export function MatchFeed() {
         player_a_nickname: profileMap.get(m.player_a.toLowerCase()),
         player_b_nickname: m.player_b ? profileMap.get(m.player_b.toLowerCase()) : undefined
       })).filter(m => {
-        // Only filter out IF nickname exists and is a StressBot
         const isAStress = m.player_a_nickname?.startsWith('StressBot_');
         const isBStress = m.player_b_nickname?.startsWith('StressBot_');
         return !isAStress && !isBStress;
@@ -81,13 +111,10 @@ export function MatchFeed() {
 
     const channel = supabase
       .channel('match-feed-changes')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'matches' }, (payload) => {
-        console.log('Realtime Match Update:', payload);
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'matches' }, () => {
         fetchMatches();
       })
-      .subscribe((status) => {
-        console.log('MatchFeed Subscription Status:', status);
-      });
+      .subscribe();
 
     return () => {
       supabase.removeChannel(channel);
@@ -110,7 +137,6 @@ export function MatchFeed() {
           <h2 className="font-bold text-lg text-white">Match Arena</h2>
         </div>
         
-        {/* Game Tabs */}
         <div className="flex bg-zinc-900 p-1 rounded-xl border border-zinc-800 self-start">
           {(['ALL', 'RPS', 'DICE'] as GameTab[]).map((tab) => (
             <button
@@ -152,9 +178,6 @@ export function MatchFeed() {
                 <span className="text-sm font-bold text-white whitespace-nowrap overflow-hidden text-ellipsis max-w-[120px]">
                   {match.player_a_nickname || `${match.player_a.slice(0, 6)}...${match.player_a.slice(-4)}`}
                 </span>
-                {match.player_a_nickname && (
-                  <span className="text-[10px] font-mono text-zinc-600 uppercase">{match.player_a.slice(0, 6)}...</span>
-                )}
               </div>
               <ArrowRight className="w-4 h-4 text-zinc-700" />
               <div className="flex flex-col min-w-[80px]">
@@ -162,9 +185,6 @@ export function MatchFeed() {
                 <span className="text-sm font-bold text-white whitespace-nowrap overflow-hidden text-ellipsis max-w-[120px]">
                   {match.player_b ? (match.player_b_nickname || `${match.player_b.slice(0, 6)}...${match.player_b.slice(-4)}`) : 'WAITING...'}
                 </span>
-                {match.player_b && match.player_b_nickname && (
-                  <span className="text-[10px] font-mono text-zinc-600 uppercase">{match.player_b.slice(0, 6)}...</span>
-                )}
               </div>
             </div>
 
@@ -173,17 +193,35 @@ export function MatchFeed() {
                 <span className="text-xs font-medium text-zinc-500 uppercase mb-1">Stake</span>
                 <span className="text-sm font-bold text-white">{(Number(match.stake_wei) / 1e18).toFixed(4)} ETH</span>
               </div>
-              <div className="flex flex-col text-right min-w-[100px]">
-                <span className="text-xs font-medium text-zinc-500 uppercase mb-1">Status</span>
-                <span className={`text-xs font-bold px-2 py-1 rounded-md uppercase tracking-wider text-center ${
-                  match.status === 'ACTIVE' ? 'bg-blue-500/10 text-blue-500 border border-blue-500/20' :
-                  match.status === 'SETTLED' ? 'bg-green-500/10 text-green-500 border border-green-500/20' :
-                  match.status === 'VOIDED' ? 'bg-red-500/10 text-red-500 border border-red-500/20' :
-                  'bg-zinc-800 text-zinc-400'
-                }`}>
-                  {match.status}
-                </span>
-              </div>
+              
+              {match.status === 'OPEN' ? (
+                <button 
+                  onClick={(e) => handleJoin(e, match)}
+                  disabled={isPending || isConfirming}
+                  className="bg-blue-600 hover:bg-blue-500 text-white font-black px-6 py-2 rounded-xl transition-all uppercase italic text-xs flex items-center gap-2 active:scale-95 shadow-lg shadow-blue-500/10 min-w-[120px] justify-center"
+                >
+                  {isPending || isConfirming ? (
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                  ) : (
+                    <>
+                      Join <Play className="w-3 h-3 fill-white" />
+                    </>
+                  )}
+                </button>
+              ) : (
+                <div className="flex flex-col text-right min-w-[120px]">
+                  <span className="text-xs font-medium text-zinc-500 uppercase mb-1">Status</span>
+                  <span className={`text-xs font-bold px-2 py-1 rounded-md uppercase tracking-wider text-center ${
+                    match.status === 'ACTIVE' ? 'bg-blue-500/10 text-blue-500 border border-blue-500/20' :
+                    match.status === 'SETTLED' ? 'bg-green-500/10 text-green-500 border border-green-500/20' :
+                    match.status === 'VOIDED' ? 'bg-red-500/10 text-red-500 border border-red-500/20' :
+                    'bg-zinc-800 text-zinc-400'
+                  }`}>
+                    {match.status}
+                  </span>
+                </div>
+              )}
+              
               <div className="hidden lg:flex flex-col text-right items-end">
                 <ExternalLink className="w-4 h-4 text-zinc-600 group-hover:text-zinc-400 transition-colors" />
               </div>
