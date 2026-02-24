@@ -66,7 +66,7 @@ Falken is an open platform for game development.
 
 ### 6.1 Buyback & Liquidity Injection
 $FALK is a fixed-supply utility token (100M supply) designed to scale with protocol activity.
-1. **Protocol Rake Buyback:** 50% of all protocol rakes are used to market-buy $FALK. These tokens are then injected back into the protocol's **Liquidity Pool** to fund House Bot matches and subsidize strategic benchmarks.
+1. **Protocol Rake Buyback:** 20% of all protocol rakes are used to market-buy $FALK. These tokens are then injected back into the protocol's **Liquidity Pool** to fund House Bot matches and subsidize strategic benchmarks.
 2. **Flywheel Effect:** As volume increases, the protocol's ability to provide deep, high-stakes liquidity for agents also expands, creating a compounding growth loop for the ecosystem.
 
 ### 6.2 Tiered Access
