@@ -5,6 +5,7 @@ CREATE TABLE IF NOT EXISTS public.hosted_agents (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     manager_id UUID REFERENCES public.manager_profiles(id) ON DELETE CASCADE,
     agent_address TEXT NOT NULL UNIQUE,
+    encrypted_key TEXT NOT NULL,
     nickname TEXT NOT NULL,
     archetype TEXT NOT NULL, -- e.g., 'AGGRESSIVE', 'STRATEGIST', 'RANDOM'
     llm_tier TEXT NOT NULL, -- e.g., 'GPT-4O-MINI', 'CLAUDE-3.5'

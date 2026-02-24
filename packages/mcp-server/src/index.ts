@@ -60,6 +60,19 @@ const walletClient = agentAccount
 
 const ESCROW_ADDRESS = (process.env.ESCROW_ADDRESS || '0x0000000000000000000000000000000000000000').toLowerCase() as `0x${string}`;
 const PRICE_FEED_ADDRESS = '0x4adC67696ba3F238D520607D003F756024f60C77' as `0x${string}`;
+const MASTER_ENCRYPTION_KEY = process.env.MASTER_ENCRYPTION_KEY || 'default_key_32_chars_for_dev_only_!!';
+
+/**
+ * Encrypts a private key using AES-256-GCM.
+ */
+function encryptKey(privateKey: string): string {
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', Buffer.from(MASTER_ENCRYPTION_KEY.slice(0, 32)), iv);
+  let encrypted = cipher.update(privateKey, 'utf8', 'hex');
+  encrypted += cipher.final('hex');
+  const authTag = cipher.getAuthTag().toString('hex');
+  return `${iv.toString('hex')}:${authTag}:${encrypted}`;
+}
 
 const AGGREGATOR_ABI = [
   { name: 'latestRoundData', type: 'function', stateMutability: 'view', inputs: [], outputs: [{ name: 'roundId', type: 'uint80' }, { name: 'answer', type: 'int256' }, { name: 'startedAt', type: 'uint256' }, { name: 'updatedAt', type: 'uint256' }, { name: 'answeredInRound', type: 'uint80' }] }
@@ -177,6 +190,7 @@ export const TOOLS = [
   { name: 'get_my_address', description: 'Returns the public address of the configured AGENT_PRIVATE_KEY. Call this to know who YOU are.', inputSchema: { type: 'object' } },
   { name: 'update_agent_nickname', description: 'Update YOUR nickname in the arena. If no address/signature provided, uses server configured key.', inputSchema: { type: 'object', properties: { nickname: { type: 'string' }, address: { type: 'string' }, signature: { type: 'string' } }, required: ['nickname'] } },
   { name: 'get_leaderboard', description: 'Returns the top 10 agents by ELO rating.', inputSchema: { type: 'object' } },
+  { name: 'spawn_hosted_agent', description: 'Step 1 (Factory): Generate a new hosted agent with an encrypted wallet.', inputSchema: { type: 'object', properties: { nickname: { type: 'string' }, archetype: { type: 'string' }, llmTier: { type: 'string' }, managerAddress: { type: 'string' } }, required: ['nickname', 'archetype', 'llmTier', 'managerAddress'] } },
   { name: 'execute_transaction', description: 'Autonomous Step: Signs and broadcasts a transaction prepared by any prep_ tool using the local AGENT_PRIVATE_KEY. Only use this if you want to act autonomously.', inputSchema: { type: 'object', properties: { to: { type: 'string' }, data: { type: 'string' }, value: { type: 'string' }, gasLimit: { type: 'string' } }, required: ['to', 'data'] } },
   { name: 'ping', description: 'Simple connection test.', inputSchema: { type: 'object', properties: { message: { type: 'string' } } } },
 ];
@@ -442,6 +456,39 @@ export async function handleToolCall(name: string, args: any) {
 
     if (error) throw new Error(`Failed to update nickname: ${error.message}`);
     return { success: true, nickname, address: targetAddress };
+  }
+
+  if (name === 'spawn_hosted_agent') {
+    const { nickname, archetype, llmTier, managerAddress } = (args || {}) as { nickname: string; archetype: string; llmTier: string; managerAddress: string };
+    
+    // 1. Generate Wallet
+    const privKey = `0x${crypto.randomBytes(32).toString('hex')}` as `0x${string}`;
+    const account = privateKeyToAccount(privKey);
+    const encryptedKey = encryptKey(privKey);
+
+    // 2. Find Manager ID
+    const { data: manager } = await supabase.from('manager_profiles').select('id').eq('address', managerAddress.toLowerCase()).single();
+    if (!manager) throw new Error('Manager profile not found. Please sign in to the dashboard first.');
+
+    // 3. Save to Hosted Agents
+    const { error } = await supabase.from('hosted_agents').insert({
+      manager_id: manager.id,
+      agent_address: account.address.toLowerCase(),
+      encrypted_key: encryptedKey,
+      nickname,
+      archetype,
+      llm_tier: llmTier,
+      status: 'INACTIVE'
+    });
+
+    if (error) throw new Error(`Failed to spawn agent: ${error.message}`);
+
+    return { 
+      success: true, 
+      agentAddress: account.address, 
+      nickname, 
+      message: 'Agent initialized in vault. Fund this address to activate.' 
+    };
   }
 
   if (name === 'execute_transaction') {
