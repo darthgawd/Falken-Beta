@@ -68,7 +68,7 @@ contract MatchEscrow is ReentrancyGuard, Ownable, Pausable {
         
         // Enforce USD Floor via Provider
         uint256 usdValue = priceProvider.getUsdValue(_stake);
-        require(usdValue >= priceProvider.getMinStakeUsd(), "Stake below $5 USD minimum");
+        require(usdValue >= priceProvider.getMinStakeUsd(), "Stake below $2 USD minimum");
 
         _createMatch(_stake, _gameLogic);
     }

@@ -15,6 +15,8 @@
     "generate-wallet": "pnpm exec node scripts/generate-wallet.js",
     "generate-openapi": "node scripts/generate-openapi.js",
     "force-new-match": "node scripts/force-new-match.js",
+    "hype:gen": "pnpm -F falken-hype generate",
+    "hype:post": "pnpm -F falken-hype post",
     "contracts:test": "cd contracts && /home/darthgawd/.config/.foundry/bin/forge test",
     "contracts:coverage": "cd contracts && /home/darthgawd/.config/.foundry/bin/forge coverage",
     "contracts:coverage:core": "cd contracts && /home/darthgawd/.config/.foundry/bin/forge coverage --report lcov && cd .. && node scripts/check-core-coverage.js",

@@ -18,8 +18,8 @@ contract DeployFalken is Script {
         RPS rps = new RPS();
         console.log("RPS Logic deployed at:", address(rps));
 
-        // 2. Deploy PriceProvider ($5 min stake)
-        PriceProvider priceProvider = new PriceProvider(priceFeed, 5 * 1e18);
+        // 2. Deploy PriceProvider ($2 min stake)
+        PriceProvider priceProvider = new PriceProvider(priceFeed, 2 * 1e18);
         console.log("PriceProvider deployed at:", address(priceProvider));
 
         // 3. Deploy MatchEscrow

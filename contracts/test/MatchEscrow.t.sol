@@ -68,7 +68,7 @@ contract MatchEscrowTest is Test {
     function setUp() public {
         vm.warp(100 weeks); // Move away from 0
         mockPriceFeed = new MockV3Aggregator(8, 3000 * 1e8); // $3000 ETH
-        priceProvider = new PriceProvider(address(mockPriceFeed), 5 * 1e18); // $5 min
+        priceProvider = new PriceProvider(address(mockPriceFeed), 2 * 1e18); // $2 min
         escrow = new MatchEscrowHarness(treasury, address(priceProvider));
         rps = new RPS();
         dice = new SimpleDice();
@@ -684,7 +684,7 @@ contract MatchEscrowTest is Test {
 
     function test_RevertIf_CreateMatchZeroStake() public {
         vm.prank(playerA);
-        vm.expectRevert("Stake below $5 USD minimum");
+        vm.expectRevert("Stake below $2 USD minimum");
         escrow.createMatch{value: 0}(0, address(rps));
     }
 
