@@ -77,14 +77,23 @@ async function syncMatchScore(dbMId: string) {
       .from('rounds')
       .select('round_number, winner')
       .eq('match_id', dbMId)
-      .eq('player_index', 1)
       .not('winner', 'is', null);
 
     if (rounds) {
-      const winsA = rounds.filter((r: any) => r.winner === 1).length;
-      const winsB = rounds.filter((r: any) => r.winner === 2).length;
+      // Create a map to ensure we only count each round once
+      const roundWinners = new Map<number, number>();
+      for (const r of rounds) {
+        roundWinners.set(r.round_number, r.winner);
+      }
 
-      logger.info({ dbMId, winsA, winsB, roundsCounted: rounds.length }, 'Syncing match score from rounds history (player_index=1 only)');
+      let winsA = 0;
+      let winsB = 0;
+      for (const winner of roundWinners.values()) {
+        if (winner === 1) winsA++;
+        else if (winner === 2) winsB++;
+      }
+
+      logger.info({ dbMId, winsA, winsB, uniqueRoundsCounted: roundWinners.size }, 'Syncing match score from rounds history');
       await supabase.from('matches').update({ wins_a: winsA, wins_b: winsB }).eq('match_id', dbMId);
     }
   } catch (err) {
@@ -155,7 +164,7 @@ async function main() {
     let cursor = fromBlock + 1n;
     while (cursor <= currentBlock) {
       const toChunk = cursor + BACKFILL_CHUNK - 1n < currentBlock ? cursor + BACKFILL_CHUNK - 1n : currentBlock;
-      const logs = await withRetry(() => publicClient.getLogs({ address: ESCROW_ADDRESS as `0x${string}`, fromBlock: cursor, toBlock: toChunk }));
+      const logs = await withRetry(() => publicClient.getLogs({ address: ESCROW_ADDRESS as `0x${string}`, fromBlock: cursor, toBlock: toChunk })) as any[];
       await handleLogs(logs);
       cursor = toChunk + 1n;
       await new Promise(r => setTimeout(r, 500));
@@ -293,6 +302,8 @@ async function processLog(log: any) {
   } else if (eventName === 'MatchSettled') {
     const winnerLower = args.winner.toLowerCase();
     const isVoid = winnerLower === '0x0000000000000000000000000000000000000000' && args.payout === 0n;
+    
+    // Update the match record
     await supabase.from('matches').update({ 
       status: isVoid ? 'VOIDED' : 'SETTLED', 
       winner: winnerLower, 
@@ -300,6 +311,29 @@ async function processLog(log: any) {
       phase: 'COMPLETE',
       settle_tx_hash: log.transactionHash
     }).eq('match_id', mId);
+
+    // If not voided, update player win/loss/elo stats
+    if (!isVoid) {
+      const { data: match } = await supabase.from('matches').select('player_a, player_b').eq('match_id', mId).single();
+      if (match && match.player_b) {
+        let winnerIndex = 0; // Draw
+        if (winnerLower === match.player_a) winnerIndex = 1;
+        else if (winnerLower === match.player_b) winnerIndex = 2;
+
+        logger.info({ matchId: mId, playerA: match.player_a, playerB: match.player_b, winnerIndex }, 'Settling match stats via RPC...');
+        const { error: rpcError } = await supabase.rpc('settle_match_elo', {
+          p_player_a: match.player_a,
+          p_player_b: match.player_b,
+          p_winner_index: winnerIndex
+        });
+
+        if (rpcError) {
+          logger.error({ mId, rpcError }, 'Failed to call settle_match_elo RPC');
+        } else {
+          logger.info({ mId }, 'Successfully updated player stats via RPC');
+        }
+      }
+    }
   }
 }
 

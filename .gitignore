@@ -11,6 +11,7 @@ build
 .env.local
 salts.json
 *.pem
+shared-ai/
 
 # DS Store
 .DS_Store

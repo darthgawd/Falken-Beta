@@ -65,10 +65,20 @@ async function backfillRounds() {
           const logs = await withRetry(() => publicClient.getLogs({
             address: ESCROW_ADDRESS as `0x${string}`,
             fromBlock: cursor,
-            toBlock,
-            args: { matchId: onChainId }
+            toBlock
           }));
-          allLogs.push(...logs);
+          
+          // Manually filter by matchId since viem getLogs with args can be tricky for indexed uint256
+          const filtered = logs.filter(l => {
+            try {
+              const parsed = parseEventLogs({ abi: ESCROW_ABI, logs: [l] });
+              return parsed.length > 0 && ((parsed[0] as any).args).matchId === onChainId;
+            } catch {
+              return false;
+            }
+          });
+
+          allLogs.push(...filtered);
           cursor = toBlock + 1n;
           await new Promise(r => setTimeout(r, 200)); // Rate limit buffer
         } catch (err: any) {

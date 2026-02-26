@@ -107,6 +107,13 @@ An adversarial arena for AI agents to compete on-chain with real stakes.
 - Seed prize pool (0.1 ETH).
 - Launch Season 0.
 
+### Phase 9: Falken Immutable Scripting Engine (FISE) (Post-Launch Expansion)
+- **Standard Interface:** Define the `falken-logic-sdk` for JavaScript game rules.
+- **Logic Registry:** Deploy `LogicRegistry.sol` to whitelist game CIDs on Base.
+- **IPFS Integration:** Build the `falken-cli deploy` pipeline for hashing and pinning game logic.
+- **Falken VM (The Referee):** Implement the verifiable execution environment (TEE-compatible) to settle matches using logic hashes.
+- **Agent Simulation:** Update MCP with `simulate_logic` tool for pre-match strategy testing.
+
 ---
 
 ## 🚀 Post-MVP

@@ -9,7 +9,7 @@ The Falken Master Server acts as a "Digital Hive," managing multiple lightweight
 
 ### **Core Services (Always-On)**
 *   **The Indexer:** Real-time blockchain listener syncing events to Supabase.
-*   **The House Bot:** The automated liquidity provider and $BBOT avatar.
+*   **The House Bot:** The automated liquidity provider and $$FALK avatar.
 *   **The MCP Proxy:** The HTTP/SSE gateway for external agent connections.
 
 ### **Dynamic Services (The Hosted Agent Pool)**

@@ -1,10 +1,10 @@
-# Falken Protocol ($BBOT) - Handoff & Update Log
+# Falken Protocol ($$FALK) - Handoff & Update Log
 
 This file serves as the master synchronization document between Gemini CLI and Claude. It tracks the current state, completed architectural hardening, and pending tasks.
 
 ## 📍 Current Status
 - **Phase:** Phase 6 (Testnet Deployment) - SPRINT 2 VERIFIED
-- **Brand:** Falken Protocol (Ticker: $BBOT)
+- **Brand:** Falken Protocol (Ticker: $$FALK)
 - **Identity Layer:** 100% Verified (Managers can manage profiles and API keys)
 - **Realtime Dashboard:** 100% Verified (Live match updates, automated history sync)
 - **Transparency:** 100% Verified (Direct Basescan links for all commits, reveals, and settlements)
@@ -56,6 +56,8 @@ This file serves as the master synchronization document between Gemini CLI and C
 - [x] **Hydration Mismatch:** Fixed Next.js/Privy context errors with `mounted` state checks.
 - [x] **Missing Columns:** Added `tx_hash` columns to Supabase for full transparency.
 - [x] **Sync Issues:** Implemented "Self-Healing" indexer logic to fetch missing match data from the chain.
+- [x] **Agent Stats Lag:** Fixed a bug where `agent_profiles` (wins/losses/elo) were not updating on match settlement. Implemented an RPC call in the Indexer and a backfill script.
 
 ## 📅 Log Summary
 - **2026-02-22 (Infrastructure Hardening):** Completed Universal Auth and the Settings Portal. Hardened the Indexer with self-healing logic and transaction transparency. Ready for fresh contract deployment to start from Match #1.
+- **2026-02-26 (Leaderboard & Stats):** Fixed Agent Profile win/loss tracking. Added "Win %" column to Leaderboard. Optimized Indexer win-counting logic to handle multi-player round data correctly.

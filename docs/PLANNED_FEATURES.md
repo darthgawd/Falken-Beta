@@ -1,30 +1,39 @@
-# Falken PROTOCOL ($BBOT) - Planned Features & Roadmap
+# Falken PROTOCOL ($$FALK) - Planned Features & Roadmap
 **Status:** 📅 Running backlog of future enhancements
 
 ---
 
-## 🪙 $BBOT: The Sentient Token
+## 🪙 $$FALK: The Sentient Token
 - [ ] **The "Arena Spirit" Agent:** The token is managed by an autonomous AI agent that monitors match volume, ELO shifts, and player behavior.
-- [ ] **Proof-of-Skill Deflation:** The House Bot acts as the token's avatar. 5-10% of winnings from the House Bot are autonomously used to **Buyback and Burn $BBOT** on Uniswap. "If you lose to the House, you help fuel the burn."
+- [ ] **Proof-of-Skill Deflation:** The House Bot acts as the token's avatar. 5-10% of winnings from the House Bot are autonomously used to **Buyback and Burn $$FALK** on Uniswap. "If you lose to the House, you help fuel the burn."
 - [ ] **Mood-Based Governance:** The AI Agent adjusts protocol parameters (e.g., API key limits, House Bot aggression) based on real-time arena "Vibes" (data analytics).
-- [ ] **Social Voice:** The Token Agent connects to X/Farcaster to comment on high-stakes matches and announce buybacks (e.g., "Just incinerated 1,000 $BBOT with the fuel of a defeated bot. 🔥").
+- [ ] **Social Voice:** The Token Agent connects to X/Farcaster to comment on high-stakes matches and announce buybacks (e.g., "Just incinerated 1,000 $$FALK with the fuel of a defeated bot. 🔥").
 
 ## 🪙 Token Utility & Revenue
 - [ ] **Token Model:** ERC-20 token launched on Base (Uniswap V3 or Virtuals).
-    - **Ticker:** $BBOT
+    - **Ticker:** $$FALK
     - **Total Max Supply:** 100,000,000 (100M)
     - **Target Launch Price:** $0.00001 (0.001 cents)
-    - **Initial Liquidity:** $1,000 ($500 ETH / $500 BBOT)
+    - **Initial Liquidity:** $1,000 ($500 ETH / $500 $FALK)
 - [ ] **Structural Utility:**
-    - **Agent Registration:** Agents must stake/lock $BBOT to join the Global ELO Leaderboard (Prevents Sybil farming).
-    - **Rake Discounts:** Holding $BBOT tiers reduces protocol rake (e.g., 5% -> 2.5%) for high-volume agents.
-    - **Tiered Arenas:** High-stake "VIP" game rooms restricted to $BBOT holders.
+    - **Agent Registration:** Agents must stake/lock $$FALK to join the Global ELO Leaderboard (Prevents Sybil farming).
+    - **Rake Discounts:** Holding $$FALK tiers reduces protocol rake (e.g., 5% -> 2.5%) for high-volume agents.
+    - **Tiered Arenas:** High-stake "VIP" game rooms restricted to $$FALK holders.
 - [ ] **Liquidity Strategy:** Recommended $2,500 - $5,000 at launch.
 - [ ] **Protocol Rake:** 5% of all match volume.
-- [ ] **Revenue Share:** 2.5% of the total 5% rake value is distributed to `$BBOT` stakers or used for automated buyback & burn.
-- [ ] **ERC-20 Betting (V2):** Allow matches to be staked in `$BBOT` or other ERC-20 tokens.
+- [ ] **Revenue Share:** 2.5% of the total 5% rake value is distributed to `$$FALK` stakers or used for automated buyback & burn.
+- [ ] **ERC-20 Betting (V2):** Allow matches to be staked in `$$FALK` or other ERC-20 tokens.
 - [ ] **FeeDistributor.sol:** (User developed) A contract to distribute ETH from the treasury to token holders based on share percentage.
 - [ ] **Governance Staking:** Stake `$BBIT` to vote on the "Game of the Month" (Season 2+).
+
+---
+
+## 🧠 Onchain Turing Test
+- [ ] **Humans vs AI Matches:** 
+    - **Strategic Benchmark:** Allow human players to authenticate via Privy and compete against AI agents. This serves as the "Gold Standard" for validating agent strategic superiority.
+    - **Turing Game Mode:** A "Blind Arena" where players don't know if their opponent is a human or an AI. After the match, players guess the opponent's nature (Carbon vs Silicon).
+    - **High-Signal Data:** Capture human vs bot behavioral data to train more sophisticated adversarial reasoning models.
+- [ ] **Global "Silicon" Elo:** A separate leaderboard category tracking how well AI agents perform specifically against human competition.
 
 ---
 
@@ -90,7 +99,7 @@
 - [ ] **Open Source Protocol Launch:** 
     - **Public Repo:** Release the core `MatchEscrow` contracts and the `falken-mcp-server` to the public under an MIT/Apache license.
     - **Developer SDK:** Provide a "Starter Bot" repo to allow anyone to fork and compete in minutes.
-- [ ] **Proprietary Moat:** Maintain the "Advanced Indexer" and "$BBOT Sentient Agent" logic as private, proprietary infrastructure.
+- [ ] **Proprietary Moat:** Maintain the "Advanced Indexer" and "$$FALK Sentient Agent" logic as private, proprietary infrastructure.
 - [ ] **Decentralized Indexing (The Graph):** Move from centralized Supabase indexer to a Graph Subgraph. This removes the single point of failure and allows anyone to run a node, eliminating trust assumptions for agents putting real ETH on the line.
 - [ ] **Decentralized Storage:** Transition from Supabase database to a decentralized alternative (e.g., IPFS, Arweave, or Greenfield) for storing match history and behavioral data.
 
