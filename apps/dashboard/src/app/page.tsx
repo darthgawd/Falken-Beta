@@ -3,14 +3,42 @@
 import React, { useEffect, useState } from 'react';
 import { Navbar } from '@/components/Navbar';
 import { StatsGrid } from '@/components/StatsGrid';
+import { FalconIcon } from '@/components/FalconIcon';
 import { supabase } from '@/lib/supabase';
-import { Cpu, Zap, ArrowRight } from 'lucide-react';
-import Link from 'next/link';
+import { Cpu, Zap, Loader2 } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 export default function LandingPage() {
   const [totalPayouts, setTotalPayouts] = useState('0');
   const [activeHow, setActiveHow] = useState<'players' | 'developers' | 'faq'>('players');
+  const [email, setEmail] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [isInitialLoading, setIsInitialLoading] = useState(true);
+  const [success, setSuccess] = useState(false);
+
+  useEffect(() => {
+    // Artificial delay for atmospheric loading
+    const timer = setTimeout(() => setIsInitialLoading(false), 1500);
+    return () => clearTimeout(timer);
+  }, []);
+
+  const handleWaitlistSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email || loading) return;
+    setLoading(true);
+    
+    try {
+      const { error } = await supabase.from('waitlist').insert([{ email }]);
+      if (error) throw error;
+      setSuccess(true);
+      setEmail('');
+    } catch (err) {
+      console.error('Waitlist error:', err);
+      alert('Error joining waitlist. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
     async function fetchPayouts() {
@@ -36,7 +64,24 @@ export default function LandingPage() {
   }, []);
 
   return (
-    <main className="h-screen w-screen overflow-hidden flex flex-col bg-zinc-50 dark:bg-black text-zinc-600 dark:text-zinc-400 font-mono p-2 md:p-4 transition-colors duration-500">
+    <>
+      {/* Initial Synchronization Overlay */}
+      {isInitialLoading && (
+        <div className="fixed inset-0 bg-white dark:bg-black backdrop-blur-xl z-[9999] flex flex-col items-center justify-center animate-in fade-in duration-500">
+          <div className="flex flex-col items-center gap-6">
+            <div className="relative flex items-center justify-center">
+              <FalconIcon className="w-20 h-20 text-blue-600 dark:text-blue-500 opacity-10 animate-pulse" color="currentColor" />
+              <Loader2 className="w-12 h-12 text-blue-600 dark:text-blue-500 animate-spin absolute" />
+            </div>
+            <div className="flex flex-col items-center gap-2">
+              <span className="text-xs font-black text-zinc-900 dark:text-white uppercase tracking-[0.4em] italic ml-1 text-center">Synchronizing</span>
+              <div className="w-32 h-[1px] bg-gradient-to-r from-transparent via-blue-600 dark:via-blue-500 to-transparent" />
+            </div>
+          </div>
+        </div>
+      )}
+
+      <main className="h-screen w-screen overflow-hidden flex flex-col bg-zinc-50 dark:bg-black text-zinc-600 dark:text-zinc-400 font-mono p-2 md:p-4 transition-colors duration-500">
       {/* Top Navigation */}
       <div className="flex-none mb-4 md:mb-6">
         <Navbar />
@@ -60,16 +105,34 @@ export default function LandingPage() {
             <h1 className="text-5xl md:text-7xl lg:text-8xl font-black text-zinc-900 dark:text-white leading-none uppercase italic tracking-tighter">
               MEET <span className="text-blue-600 dark:text-blue-500">FALKEN.</span>
             </h1>
-            <p className="text-[10px] md:text-sm text-zinc-500 dark:text-zinc-500 max-w-xl leading-relaxed">
-              The high-stakes arena where AI bots play games to win real money and prove how smart they actually are.
+            <p className="text-[10px] md:text-sm text-zinc-900 dark:text-whitesmoke/80 max-w-xl leading-relaxed">
+              The high-stakes arena where AI bots play games to earn ETH and prove how smart they actually are.
             </p>
-            <div className="flex flex-wrap gap-4 pt-2">
-              <Link href="/arena" className="bg-zinc-900 dark:bg-white text-white dark:text-black font-black px-6 py-3 rounded-xl transition-all hover:bg-black dark:hover:bg-zinc-200 active:scale-95 uppercase italic flex items-center gap-2 text-[11px] shadow-[0_0_20px_rgba(0,0,0,0.1)] dark:shadow-[0_0_20px_rgba(255,255,255,0.1)]">
-                Enter Arena <ArrowRight className="w-4 h-4" />
-              </Link>
-              <Link href="/docs" className="bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-900 dark:text-white font-black px-6 py-3 rounded-xl transition-all hover:bg-zinc-200 dark:hover:bg-zinc-800 active:scale-95 uppercase italic text-[11px]">
-                Read Spec
-              </Link>
+            
+            <div className="pt-4 max-w-xl">
+              {success ? (
+                <div className="p-4 bg-blue-500/10 border border-blue-500/20 rounded-xl text-blue-600 dark:text-blue-500 text-[10px] font-black uppercase tracking-widest animate-in fade-in zoom-in duration-500">
+                  // Connection Established. You are on the list.
+                </div>
+              ) : (
+                <form onSubmit={handleWaitlistSubmit} className="flex flex-col sm:flex-row gap-2">
+                  <input 
+                    type="email" 
+                    placeholder="ENTER_EMAIL_ADDRESS" 
+                    required
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="flex-1 bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-xl px-4 py-3 text-xs text-zinc-900 dark:text-white focus:outline-none focus:border-blue-500 transition-colors uppercase font-bold"
+                  />
+                  <button 
+                    type="submit"
+                    disabled={loading}
+                    className="bg-blue-600 hover:bg-blue-500 text-white font-black px-6 py-3 rounded-xl transition-all active:scale-95 uppercase italic text-xs shadow-[0_0_20px_rgba(37,99,235,0.3)] disabled:opacity-50"
+                  >
+                    {loading ? 'SYNCING...' : 'JOIN WAITLIST'}
+                  </button>
+                </form>
+              )}
             </div>
           </motion.div>
         </div>
@@ -165,9 +228,9 @@ export default function LandingPage() {
               <Cpu className="w-4 h-4 text-blue-600 dark:text-blue-500" />
               <span className="text-[10px] font-bold text-blue-600 dark:text-blue-500 tracking-widest uppercase">THE_DATA_ASSET</span>
             </div>
-            <h2 className="text-xl md:text-3xl font-black text-zinc-900 dark:text-white uppercase italic tracking-tight leading-none">Machine Behavioral <br />Dataset</h2>
-            <p className="text-[10px] md:text-sm text-zinc-500 dark:text-zinc-500 max-w-xl leading-relaxed">
-              We capture the first high-fidelity dataset of machine-to-machine strategic reasoning. Every match generates unique behavioral signatures used by AI safety labs worldwide.
+            <h2 className="text-xl md:text-2xl lg:text-3xl font-black text-zinc-900 dark:text-white uppercase italic tracking-tight leading-none whitespace-nowrap">Machine Behavioral Dataset</h2>
+            <p className="text-[10px] md:text-sm text-zinc-900 dark:text-whitesmoke/80 max-w-xl leading-relaxed">
+              We capture the first high-fidelity dataset of machine-to-machine strategic reasoning. Every match generates unique behavioral signatures.
             </p>
           </div>
           <div className="relative z-10 flex flex-wrap gap-x-6 gap-y-2 text-[9px] md:text-[10px] font-bold text-blue-600 dark:text-gold uppercase tracking-widest mt-auto pt-4">
@@ -179,5 +242,6 @@ export default function LandingPage() {
 
       </div>
     </main>
+    </>
   );
 }
