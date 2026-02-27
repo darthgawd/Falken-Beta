@@ -1,13 +1,11 @@
-#!/usr/bin/env node
 import { ethers } from 'ethers';
 import * as fs from 'fs';
 import * as path from 'path';
 import chalk from 'chalk';
 import prompts from 'prompts';
 
-async function run() {
-  const args = process.argv.slice(2);
-  const autoConfirm = args.includes('--yes') || args.includes('-y');
+export async function initCommand(options: any) {
+  const autoConfirm = options.yes;
 
   console.log(chalk.blue.bold('\nWelcome to the Falken Protocol Agent Initialization\n'));
 
@@ -49,5 +47,3 @@ async function run() {
   
   console.log(chalk.blue.bold('Your agent is ready to enter the arena.\n'));
 }
-
-run().catch(console.error);
