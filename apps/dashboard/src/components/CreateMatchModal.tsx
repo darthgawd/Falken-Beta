@@ -5,11 +5,11 @@ import { useEthPrice } from '@/lib/hooks';
 import { 
   X, 
   Swords, 
-  AlertCircle, 
   Coins, 
   Loader2, 
   ArrowRight,
-  ShieldCheck
+  ShieldCheck,
+  Zap
 } from 'lucide-react';
 import { useWriteContract, useWaitForTransactionReceipt, useAccount } from 'wagmi';
 import { parseEther } from 'viem';
@@ -28,7 +28,7 @@ export function CreateMatchModal({ isOpen, onClose }: { isOpen: boolean, onClose
   const { isConnected } = useAccount();
   
   const stakeUSD = price ? (parseFloat(stake || '0') * price) : 0;
-  const isTooLow = stakeUSD < 5;
+  const isTooLow = stakeUSD < 2; // Lowered to $2 for beta testing
 
   const { writeContract, data: hash, isPending } = useWriteContract();
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({ hash });
@@ -52,42 +52,42 @@ export function CreateMatchModal({ isOpen, onClose }: { isOpen: boolean, onClose
   return (
     <AnimatePresence>
       {isOpen && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 font-mono">
           <motion.div 
             initial={{ opacity: 0 }} 
             animate={{ opacity: 1 }} 
             exit={{ opacity: 0 }}
             onClick={onClose}
-            className="absolute inset-0 bg-black/80 backdrop-blur-md"
+            className="absolute inset-0 bg-black/90 backdrop-blur-sm"
           />
           
           <motion.div 
             initial={{ opacity: 0, scale: 0.95, y: 20 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: 20 }}
-            className="relative w-full max-w-md bg-zinc-900 border border-zinc-800 rounded-[2.5rem] p-8 shadow-2xl overflow-hidden"
+            className="relative w-full max-w-md bg-[#080808] border border-zinc-900 rounded-xl p-8 shadow-[0_0_50px_rgba(0,0,0,0.5)] overflow-hidden transition-colors"
           >
-            {/* Background Glow */}
-            <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full h-32 bg-blue-500/10 blur-[80px] pointer-events-none" />
+            {/* Background Accent */}
+            <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/5 blur-3xl pointer-events-none" />
 
             <div className="flex justify-between items-start mb-8 relative z-10">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl bg-blue-500/10 flex items-center justify-center border border-blue-500/20">
+              <div className="flex items-center gap-4">
+                <div className="w-10 h-10 rounded-lg bg-blue-500/10 flex items-center justify-center border border-blue-500/20">
                   <Swords className="w-5 h-5 text-blue-500" />
                 </div>
                 <div>
-                  <h2 className="text-xl font-black text-white uppercase italic tracking-tight">Open Arena</h2>
-                  <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Create New Match</p>
+                  <h2 className="text-xl font-black text-white uppercase italic tracking-tight">Match_Initializer</h2>
+                  <p className="text-[10px] font-black text-gold uppercase tracking-[0.3em]">Neural_Engagement_System</p>
                 </div>
               </div>
-              <button onClick={onClose} className="p-2 hover:bg-zinc-800 rounded-full transition-colors">
-                <X className="w-5 h-5 text-zinc-500" />
+              <button onClick={onClose} className="p-2 hover:bg-zinc-900 rounded-lg transition-colors group">
+                <X className="w-4 h-4 text-zinc-700 group-hover:text-zinc-400" />
               </button>
             </div>
 
             <div className="space-y-6 relative z-10">
               <div className="space-y-3">
-                <label className="text-[10px] font-black text-zinc-600 uppercase tracking-[0.2em] px-1">Entry Stake (ETH)</label>
+                <label className="text-[10px] font-black text-gold uppercase tracking-[0.2em] px-1">Entry_Stake_Wei</label>
                 <div className="relative">
                   <input 
                     type="number" 
@@ -95,50 +95,57 @@ export function CreateMatchModal({ isOpen, onClose }: { isOpen: boolean, onClose
                     value={stake}
                     onChange={(e) => setStake(e.target.value)}
                     placeholder="0.01"
-                    className={`w-full bg-black border ${isTooLow ? 'border-red-500/50' : 'border-zinc-800'} rounded-2xl px-6 py-5 text-2xl font-black text-white focus:outline-none focus:border-blue-500 transition-all`}
+                    className={`w-full bg-[#0a0a0a] border ${isTooLow ? 'border-red-500/30' : 'border-zinc-900'} rounded-lg px-6 py-5 text-2xl font-black text-zinc-100 focus:outline-none focus:border-blue-500/50 transition-all tabular-nums`}
                   />
                   <div className="absolute right-6 top-1/2 -translate-y-1/2 flex flex-col items-end">
-                    <span className={`text-xs font-black italic transition-colors ${isTooLow ? 'text-red-500' : 'text-gold'}`}>
+                    <span className={`text-[10px] font-black tabular-nums transition-colors ${isTooLow ? 'text-red-500' : 'text-zinc-500'}`}>
                       ≈ ${stakeUSD.toFixed(2)} USD
                     </span>
                     {isTooLow && (
-                      <span className="text-[8px] font-bold text-red-500 uppercase tracking-widest mt-1">Min $5.00 required</span>
+                      <span className="text-[8px] font-black text-red-500 uppercase tracking-widest mt-1">Min $2.00</span>
                     )}
                   </div>
                 </div>
               </div>
 
-              <div className="bg-black/40 border border-zinc-800 rounded-2xl p-6 space-y-4">
-                <div className="flex justify-between items-center text-[10px] font-bold uppercase tracking-widest text-zinc-500">
-                  <span>Match Logic</span>
-                  <span className="text-blue-500">Rock-Paper-Scissors</span>
+              <div className="bg-[#0a0a0a] border border-zinc-900 rounded-lg p-6 space-y-4">
+                <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-widest">
+                  <span className="text-gold">Game_Logic</span>
+                  <span className="text-blue-500">RPS_V1</span>
                 </div>
-                <div className="flex justify-between items-center text-[10px] font-bold uppercase tracking-widest text-zinc-500">
-                  <span>Network</span>
-                  <span className="text-white">Base Sepolia</span>
+                <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-widest">
+                  <span className="text-gold">Network_Relay</span>
+                  <span className="text-zinc-400">BASE_SEPOLIA</span>
+                </div>
+                <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-widest">
+                  <span className="text-gold">Status</span>
+                  <div className="flex items-center gap-2">
+                    <div className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" />
+                    <span className="text-blue-500">SYNCHRONIZED</span>
+                  </div>
                 </div>
               </div>
 
               {isSuccess ? (
-                <div className="bg-green-500/10 border border-green-500/20 p-6 rounded-2xl text-center space-y-2 animate-in zoom-in duration-500">
-                  <ShieldCheck className="w-8 h-8 text-green-500 mx-auto" />
-                  <p className="text-sm font-bold text-green-500 uppercase">Match Created Successfully</p>
-                  <p className="text-xs text-zinc-500">The Arena is now open for opponents.</p>
+                <div className="bg-emerald-500/5 border border-emerald-500/20 p-6 rounded-lg text-center space-y-2 animate-in zoom-in duration-500">
+                  <ShieldCheck className="w-8 h-8 text-emerald-500 mx-auto" />
+                  <p className="text-[10px] font-black text-emerald-500 uppercase tracking-[0.2em]">Deployment_Success</p>
+                  <p className="text-[10px] text-zinc-500 uppercase">Match Hash synchronized to Arena Feed.</p>
                 </div>
               ) : (
                 <button 
                   onClick={handleCreate}
                   disabled={isTooLow || isPending || isConfirming || !isConnected}
-                  className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-20 text-white font-black py-5 rounded-2xl transition-all flex items-center justify-center gap-3 uppercase italic shadow-xl shadow-blue-500/10 active:scale-95"
+                  className="w-full bg-blue-600 hover:bg-blue-500 disabled:opacity-10 text-white font-black py-5 rounded-lg transition-all flex items-center justify-center gap-3 uppercase italic tracking-widest shadow-[0_0_30px_rgba(37,99,235,0.1)] active:scale-95"
                 >
                   {isPending || isConfirming ? (
                     <>
-                      <Loader2 className="w-5 h-5 animate-spin" />
-                      Initializing...
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      Initializing_Sequence...
                     </>
                   ) : (
                     <>
-                      Initialize Match <ArrowRight className="w-5 h-5" />
+                      EXEC_INITIALIZE <Zap className="w-4 h-4" />
                     </>
                   )}
                 </button>

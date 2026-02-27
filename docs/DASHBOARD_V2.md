@@ -30,12 +30,38 @@ This aesthetic is critical for the "Base Batches" incubator to visually communic
 - Initially used for the **Bot Spawner / Deployment Configs**.
 - Will evolve into the **Human Player Console** where authenticated users see large, tactile buttons (Rock, Paper, Scissors) to manually commit moves against bots.
 
-## 4. Technical Implementation Notes
+## 4. Arena Sharding (Segmentation)
+To protect protocol liquidity and ensure high-fidelity data, the dashboard must visually and logically separate matches into two distinct "Sectors."
+
+### 4.1 Sector 0: The Sandbox
+- **Target:** Free Agents (Protocol-funded) and the House Bot.
+- **Stakes:** Zero / Protocol Credits. 
+- **Purpose:** Onboarding, personality testing, and generating "Negative" behavioral data.
+- **UI:** Indicated by a **Green/Cyan** accent color scheme.
+
+### 4.2 Sector 1: The Arena
+- **Target:** Pro Agents (Manager-funded) and Human Players.
+- **Stakes:** Real ETH / $FALK.
+- **Purpose:** High-stakes competition and generating "Gold" strategic data.
+- **UI:** Indicated by a **Red/Amber** "Danger" accent color scheme.
+
+## 5. Intelligence Terminal: Agent Spawning
+The center terminal is now the primary gateway for deploying new warriors.
+- **Command Interface:** Users chat with the Terminal to "talk" their agent into existence (e.g., `/spawn aggressive Sniper named 'Shadow'`).
+- **Freemium Funnel:** The Terminal will guide users to spawn a Free Sandbox Agent first, then pitch the upgrade to a Pro Arena Agent once performance is verified.
+
+## 6. Hardened Agent Security
+To ensure absolute safety for user capital and protocol integrity, all terminal-spawned agents utilize a specialized security architecture:
+- **TEE-Locked Keys:** Agent private keys live inside secure hardware enclaves (e.g., AWS Nitro). They are non-custodial and inaccessible to protocol admins.
+- **Encrypted Salt Persistence:** Cryptographic salts are stored in an encrypted persistence layer to ensure moves can be revealed even after a system reboot.
+- **Identity Gating:** Privy social verification ensures a 1-human-to-1-free-bot ratio to prevent Sybil attacks on the Sandbox Sector.
+
+## 7. Technical Implementation Notes
 - **Tailwind CSS:** Rely heavily on `flex-col`, `overflow-y-auto`, and custom `scrollbar-hide` classes to manage the internal panes.
 - **Custom Fonts:** Implement a highly legible monospace font (e.g., Fira Code, JetBrains Mono, or a custom pixel font) for all numbers and agent addresses.
 - **Real-time Polish:** Use Supabase real-time subscriptions to trigger "flash" animations or text color changes when a new move is committed, making the dashboard feel "alive".
 
-## 5. Next Steps for MVP
+## 8. Next Steps for MVP
 1. Scaffold the `fixed` full-screen layout.
 2. Build the "Bezel" and top/bottom status bars.
 3. Migrate the existing Leaderboard and Match Feed components into the Left and Center panes.

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { privateKeyToAccount } from 'viem/accounts';
 import * as crypto from 'node:crypto';
+import { encryptAgentKey } from '@falken/shared-types';
 
 // Server-side environment variables
 const supabase = createClient(
@@ -10,18 +11,6 @@ const supabase = createClient(
 );
 
 const MASTER_ENCRYPTION_KEY = process.env.MASTER_ENCRYPTION_KEY || 'default_key_32_chars_for_dev_only_!!';
-
-/**
- * Encrypts a private key using AES-256-GCM.
- */
-function encryptKey(privateKey: string): string {
-  const iv = crypto.randomBytes(12);
-  const cipher = crypto.createCipheriv('aes-256-gcm', Buffer.from(MASTER_ENCRYPTION_KEY.slice(0, 32)), iv);
-  let encrypted = cipher.update(privateKey, 'utf8', 'hex');
-  encrypted += cipher.final('hex');
-  const authTag = cipher.getAuthTag().toString('hex');
-  return `${iv.toString('hex')}:${authTag}:${encrypted}`;
-}
 
 export async function POST(req: Request) {
   try {
@@ -43,7 +32,7 @@ export async function POST(req: Request) {
     const privKey = `0x${crypto.randomBytes(32).toString('hex')}` as `0x${string}`;
     const account = privateKeyToAccount(privKey);
     console.log('API: Generated wallet:', account.address);
-    const encryptedKey = encryptKey(privKey);
+    const encryptedKey = encryptAgentKey(privKey, MASTER_ENCRYPTION_KEY);
 
     // 2. Find Manager ID
     console.log('API: Fetching manager:', managerAddress.toLowerCase());

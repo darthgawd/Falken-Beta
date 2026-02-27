@@ -2,11 +2,11 @@
 
 import React, { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import { Swords, ArrowRight, Loader2, ExternalLink, Play } from 'lucide-react';
+import { Swords, ArrowRight, Loader2, Play, Circle, Zap } from 'lucide-react';
 import Link from 'next/link';
-import { formatDistanceToNow } from 'date-fns';
-import { useWriteContract, useWaitForTransactionReceipt, useAccount } from 'wagmi';
+import { useWriteContract, useWaitForTransactionReceipt } from 'wagmi';
 import { usePrivy } from '@privy-io/react-auth';
+import { CreateMatchModal } from './CreateMatchModal';
 
 interface Match {
   match_id: string;
@@ -35,16 +35,25 @@ type GameTab = 'ALL' | 'RPS' | 'DICE';
 
 export function MatchFeed() {
   const { authenticated, login } = usePrivy();
-  const { isConnected } = useAccount();
   const [matches, setMatches] = useState<Match[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<GameTab>('ALL');
+  const [isModalOpen, setIsModalOpen] = useState(false);
 
   const { writeContract, data: hash, isPending } = useWriteContract();
   const { isLoading: isConfirming } = useWaitForTransactionReceipt({ hash });
 
+  const handleInitiate = (e: React.MouseEvent) => {
+    e.preventDefault();
+    if (!authenticated) {
+      login();
+      return;
+    }
+    setIsModalOpen(true);
+  };
+
   const handleJoin = (e: React.MouseEvent, match: Match) => {
-    e.preventDefault(); // Prevent Link navigation
+    e.preventDefault();
     e.stopPropagation();
 
     if (!authenticated) {
@@ -97,11 +106,7 @@ export function MatchFeed() {
         ...m,
         player_a_nickname: profileMap.get(m.player_a.toLowerCase()),
         player_b_nickname: m.player_b ? profileMap.get(m.player_b.toLowerCase()) : undefined
-      })).filter(m => {
-        const isAStress = m.player_a_nickname?.startsWith('StressBot_');
-        const isBStress = m.player_b_nickname?.startsWith('StressBot_');
-        return !isAStress && !isBStress;
-      });
+      }));
 
       setMatches(enrichedMatches);
       setLoading(false);
@@ -124,22 +129,20 @@ export function MatchFeed() {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <Loader2 className="w-6 h-6 text-zinc-500 animate-spin" />
+        <Loader2 className="w-6 h-6 text-zinc-300 dark:text-zinc-800 animate-spin" />
       </div>
     );
   }
 
   return (
-    <div className="space-y-4">
-      <div className="flex bg-zinc-900/50 p-1 rounded-lg border border-zinc-800/50 self-start w-fit mb-4">
+    <div className="space-y-6 transition-colors duration-500">
+      <div className="flex gap-4 border-b border-zinc-100 dark:border-zinc-900 pb-4">
         {(['ALL', 'RPS', 'DICE'] as GameTab[]).map((tab) => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
-            className={`px-3 py-1 rounded text-[10px] font-bold transition-all ${
-              activeTab === tab 
-                ? 'bg-zinc-800 text-white shadow-lg' 
-                : 'text-zinc-500 hover:text-zinc-300'
+            className={`text-[10px] font-black tracking-[0.2em] uppercase transition-all ${
+              activeTab === tab ? 'text-blue-600 dark:text-blue-500' : 'text-zinc-300 dark:text-zinc-700 hover:text-zinc-500 dark:hover:text-zinc-500'
             }`}
           >
             {tab}
@@ -147,83 +150,112 @@ export function MatchFeed() {
         ))}
       </div>
       
-      <div className="grid gap-2">
-        {matches.map((match) => (
+      <div className="space-y-1">
+        {/* Initiate Match Row */}
+        <button 
+          onClick={handleInitiate}
+          className="w-full flex items-center justify-between p-4 bg-emerald-600/[0.05] dark:bg-emerald-500/[0.05] border border-emerald-600/20 dark:border-emerald-500/30 hover:bg-emerald-600/[0.1] dark:hover:bg-emerald-500/[0.1] transition-all group rounded-md mb-4"
+        >
+          <div className="flex items-center gap-6">
+            <div className="flex flex-col items-center min-w-[40px]">
+              <Zap className="w-4 h-4 text-emerald-600 dark:text-emerald-500 animate-pulse" />
+            </div>
+            <div className="flex flex-col items-start">
+              <span className="text-[10px] font-black text-gold uppercase tracking-[0.2em] mb-0.5">Arena_Action</span>
+              <span className="text-sm font-bold text-zinc-900 dark:text-zinc-100 uppercase tracking-tighter">Initiate_New_Battle</span>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 text-[10px] font-black text-emerald-600 dark:text-emerald-500 uppercase tracking-[0.2em]">
+            JOIN_BATTLE <Play className="w-3 h-3 fill-emerald-600 dark:fill-emerald-500" />
+          </div>
+        </button>
+
+        {matches.map((match, index) => (
           <Link 
             key={match.match_id} 
             href={`/match/${match.match_id}`}
-            className="bg-zinc-900/30 border border-zinc-800/50 p-3 rounded-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 hover:bg-zinc-800/50 transition-colors group"
+            className={`flex items-center justify-between p-4 border border-zinc-100 dark:border-zinc-900/50 hover:border-zinc-200 dark:hover:border-zinc-800 transition-all group rounded-md ${
+              index % 2 === 0 
+                ? 'bg-blue-600/[0.03] dark:bg-blue-500/[0.03]' 
+                : 'bg-blue-600/[0.08] dark:bg-blue-500/[0.08]'
+            } hover:bg-blue-600/[0.12] dark:hover:bg-blue-500/[0.12]`}
           >
-            <div className="flex items-center gap-3">
-              <div className="flex flex-col items-center">
-                <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold text-[9px] border ${
-                    match.game_logic.toLowerCase() === RPS_LOGIC ? 'bg-orange-500/10 text-orange-500 border-orange-500/20' :
-                    match.game_logic.toLowerCase() === DICE_LOGIC ? 'bg-purple-500/10 text-purple-500 border-purple-500/20' :
-                    'bg-zinc-800 text-zinc-500 border-zinc-700'
+            <div className="flex items-center gap-6">
+              {/* Game Badge */}
+              <div className="flex flex-col items-center min-w-[40px]">
+                <div className={`text-[9px] font-black tracking-widest ${
+                  match.game_logic.toLowerCase() === RPS_LOGIC ? 'text-blue-600 dark:text-blue-500' :
+                  match.game_logic.toLowerCase() === DICE_LOGIC ? 'text-purple-600 dark:text-purple-500' :
+                  'text-zinc-400 dark:text-zinc-700'
                 }`}>
-                    {match.game_logic.toLowerCase() === RPS_LOGIC ? 'RPS' :
-                    match.game_logic.toLowerCase() === DICE_LOGIC ? 'DICE' : '??'}
+                  {match.game_logic.toLowerCase() === RPS_LOGIC ? 'RPS' :
+                  match.game_logic.toLowerCase() === DICE_LOGIC ? 'DICE' : '??'}
                 </div>
-                <span className="text-[8px] font-bold text-zinc-600 mt-0.5">#{match.match_id.split('-').pop()}</span>
+                <div className="text-[10px] font-black text-black dark:text-zinc-200 tabular-nums opacity-80 group-hover:opacity-100 transition-opacity">#{match.match_id.split('-').pop()}</div>
               </div>
-              
-              <div className="flex items-center gap-3">
+
+              {/* Rivalry */}
+              <div className="flex items-center gap-4">
                 <div className="flex flex-col">
-                  <span className="text-[8px] font-bold text-zinc-600 uppercase mb-0.5">PLAYER A</span>
-                  <span className="text-xs font-bold text-white truncate max-w-[80px]">
-                    {match.player_a_nickname || `${match.player_a.slice(0, 4)}...`}
+                  <span className="text-[8px] font-black text-gold uppercase tracking-tighter mb-0.5">INITIATOR</span>
+                  <span className="text-sm font-medium text-zinc-900 dark:text-zinc-100">
+                    {match.player_a_nickname || match.player_a.slice(0, 6)}
                   </span>
                 </div>
-                <ArrowRight className="w-3 h-3 text-zinc-800" />
+                <Swords className="w-3 h-3 text-zinc-200 dark:text-zinc-800" />
                 <div className="flex flex-col">
-                  <span className="text-[8px] font-bold text-zinc-600 uppercase mb-0.5">PLAYER B</span>
-                  <span className="text-xs font-bold text-white truncate max-w-[80px]">
-                    {match.player_b ? (match.player_b_nickname || `${match.player_b.slice(0, 4)}...`) : 'WAITING...'}
+                  <span className="text-[8px] font-black text-gold uppercase tracking-tighter mb-0.5">RIVAL</span>
+                  <span className={`text-sm font-medium ${match.player_b ? 'text-zinc-900 dark:text-zinc-100' : 'text-zinc-300 dark:text-zinc-800 italic'}`}>
+                    {match.player_b ? (match.player_b_nickname || match.player_b.slice(0, 6)) : 'WAITING_FOR_HANDSHAKE...'}
                   </span>
                 </div>
               </div>
             </div>
 
-            <div className="flex items-center gap-4 ml-auto sm:ml-0">
-              <div className="flex flex-col text-right">
-                <span className="text-[8px] font-bold text-zinc-600 uppercase mb-0.5">Stake</span>
-                <span className="text-[10px] font-bold text-white">{(Number(match.stake_wei) / 1e18).toFixed(4)} ETH</span>
+            <div className="flex items-center gap-8">
+              {/* Stake */}
+              <div className="flex flex-col text-right tabular-nums">
+                <span className="text-[8px] font-black text-gold uppercase tracking-tighter mb-0.5">STAKE</span>
+                <span className="text-xs font-bold text-zinc-500 dark:text-zinc-400">{(Number(match.stake_wei) / 1e18).toFixed(4)} ETH</span>
               </div>
               
-              {match.status === 'OPEN' ? (
-                <button 
-                  onClick={(e) => handleJoin(e, match)}
-                  disabled={isPending || isConfirming}
-                  className="bg-blue-600 hover:bg-blue-500 text-white font-black px-4 py-1.5 rounded-lg transition-all uppercase text-[9px] flex items-center gap-2 active:scale-95 shadow-lg shadow-blue-500/10"
-                >
-                  {isPending || isConfirming ? (
-                    <Loader2 className="w-2.5 h-2.5 animate-spin" />
-                  ) : (
-                    <>JOIN <Play className="w-2.5 h-2.5 fill-white" /></>
-                  )}
-                </button>
-              ) : (
-                <div className="flex flex-col text-right min-w-[70px]">
-                  <span className="text-[8px] font-bold text-zinc-600 uppercase mb-0.5">Status</span>
-                  <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded uppercase tracking-wider text-center ${
-                    match.status === 'ACTIVE' ? 'bg-blue-500/10 text-blue-500 border border-blue-500/20' :
-                    match.status === 'SETTLED' ? 'bg-green-500/10 text-green-500 border border-green-500/20' :
-                    match.status === 'VOIDED' ? 'bg-red-500/10 text-red-500 border border-red-500/20' :
-                    'bg-zinc-800 text-zinc-400'
+              {/* Status / Action */}
+              <div className="min-w-[100px] flex justify-end">
+                {match.status === 'OPEN' ? (
+                  <button 
+                    onClick={(e) => handleJoin(e, match)}
+                    disabled={isPending || isConfirming}
+                    className="flex items-center gap-2 text-[10px] font-black text-blue-600 dark:text-blue-500 hover:text-blue-700 dark:hover:text-blue-400 transition-colors uppercase tracking-[0.2em]"
+                  >
+                    {isPending || isConfirming ? (
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                    ) : (
+                      <>EXEC_JOIN <Play className="w-2.5 h-2.5 fill-blue-600 dark:fill-blue-500" /></>
+                    )}
+                  </button>
+                ) : (
+                  <div className={`flex items-center gap-2 px-3 py-1 rounded border ${
+                    match.status === 'ACTIVE' ? 'bg-blue-600/5 dark:bg-blue-500/5 text-blue-600 dark:text-blue-500 border-blue-600/10 dark:border-blue-500/20' :
+                    match.status === 'SETTLED' ? 'bg-zinc-50 dark:bg-zinc-900 text-zinc-400 dark:text-zinc-500 border-zinc-200 dark:border-zinc-800' :
+                    'bg-red-600/5 dark:bg-red-500/5 text-red-600 dark:text-red-500 border-red-600/10 dark:border-red-500/20'
                   }`}>
-                    {match.status}
-                  </span>
-                </div>
-              )}
+                    {match.status === 'ACTIVE' && <Circle className="w-1.5 h-1.5 fill-blue-600 dark:fill-blue-500 animate-pulse" />}
+                    <span className="text-[9px] font-black uppercase tracking-widest">{match.status}</span>
+                  </div>
+                )}
+              </div>
             </div>
           </Link>
         ))}
-        {matches.length === 0 && (
-          <div className="bg-zinc-900/20 border border-zinc-800/50 p-8 rounded-xl text-center">
-            <p className="text-zinc-600 text-[10px] font-bold uppercase tracking-[0.2em] italic">Arena Offline</p>
-          </div>
-        )}
       </div>
+      {matches.length === 0 && (
+        <div className="flex flex-col items-center justify-center py-20 opacity-20 dark:opacity-10 grayscale">
+          <Swords className="w-12 h-12 mb-4 text-zinc-400" />
+          <span className="text-[10px] font-black uppercase tracking-[0.5em] text-zinc-500">Arena_Empty</span>
+        </div>
+      )}
+
+      <CreateMatchModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} />
     </div>
   );
 }

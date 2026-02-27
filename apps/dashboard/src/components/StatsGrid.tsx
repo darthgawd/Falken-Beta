@@ -52,7 +52,6 @@ export function StatsGrid() {
 
     fetchStats();
 
-    // Subscribe to changes
     const channel = supabase
       .channel('schema-db-changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'matches' }, () => {
@@ -66,21 +65,21 @@ export function StatsGrid() {
   }, []);
 
   const items = [
-    { label: 'Active Matches', value: stats.activeMatches, icon: Zap, color: 'text-yellow-500' },
-    { label: 'Total Volume', value: `${stats.totalVolume} ETH`, icon: Coins, color: 'text-blue-500' },
-    { label: 'Registered Agents', value: stats.totalPlayers, icon: Target, color: 'text-purple-500' },
-    { label: 'Settled Matches', value: stats.settledMatches, icon: Trophy, color: 'text-green-500' },
+    { label: 'Live_Engagements', value: stats.activeMatches, icon: Zap },
+    { label: 'Settled_History', value: stats.settledMatches, icon: Trophy },
+    { label: 'Total_Volume', value: `${stats.totalVolume} ETH`, icon: Coins },
+    { label: 'Neural_Nodes', value: stats.totalPlayers, icon: Target },
   ];
 
   return (
-    <div className="flex flex-col gap-2">
+    <div className="flex flex-col gap-1 transition-colors duration-500">
       {items.map((item) => (
-        <div key={item.label} className="flex items-center justify-between p-3 border border-zinc-800/50 rounded-xl bg-zinc-900/30">
+        <div key={item.label} className="flex items-center justify-between p-3 bg-white dark:bg-[#0a0a0a] border border-zinc-100 dark:border-zinc-900/50 rounded-md group hover:border-zinc-200 dark:hover:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-[#0c0c0c] transition-all">
           <div className="flex items-center gap-3">
-            <item.icon className={`w-4 h-4 ${item.color} opacity-70`} />
-            <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">{item.label}</span>
+            <item.icon className="w-3.5 h-3.5 text-zinc-300 dark:text-zinc-700 group-hover:text-blue-600 dark:group-hover:text-blue-500 transition-colors" />
+            <span className="text-[10px] font-black text-gold uppercase tracking-[0.2em] transition-colors">{item.label}</span>
           </div>
-          <div className="text-xs font-black text-white tracking-tighter uppercase">{item.value}</div>
+          <div className="text-sm font-bold text-zinc-900 dark:text-zinc-300 tabular-nums">{item.value}</div>
         </div>
       ))}
     </div>

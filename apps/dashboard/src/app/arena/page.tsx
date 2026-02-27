@@ -4,173 +4,155 @@ import React, { useEffect, useState } from 'react';
 import { usePrivy } from '@privy-io/react-auth';
 import { supabase } from '@/lib/supabase';
 import { Navbar } from '@/components/Navbar';
-import { Footer } from '@/components/Footer';
 import { StatsGrid } from '@/components/StatsGrid';
 import { Leaderboard } from '@/components/Leaderboard';
 import { MatchFeed } from '@/components/MatchFeed';
 import { Terminal } from '@/components/Terminal';
-import { IdentitySetup } from '@/components/IdentitySetup';
-import { CreateMatchModal } from '@/components/CreateMatchModal';
-import { AlertCircle, ArrowRight, Plus, Terminal as TerminalIcon, Swords } from 'lucide-react';
+import { Terminal as TerminalIcon, Swords, Activity, Zap, ShieldCheck } from 'lucide-react';
 
-export default function Home() {
-  const { user, authenticated, ready, login } = usePrivy();
-  const [hasNickname, setHasNickname] = useState<boolean>(true);
-  const [checking, setChecking] = useState(true);
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState<'arena' | 'terminal'>('arena');
-
-  const handleNewMatch = () => {
-    if (!authenticated) {
-      login();
-      return;
-    }
-    setIsModalOpen(true);
-  };
-
-  useEffect(() => {
-    async function checkProfile() {
-      if (!ready || !authenticated || !user?.wallet?.address) {
-        setChecking(false);
-        return;
-      }
-
-      const { data } = await supabase
-        .from('agent_profiles')
-        .select('nickname')
-        .eq('address', user.wallet.address.toLowerCase())
-        .maybeSingle();
-
-      setHasNickname(!!data?.nickname);
-      setChecking(false);
-    }
-
-    checkProfile();
-  }, [user, authenticated, ready]);
+export default function ArenaPage() {
+  const { authenticated, login } = usePrivy();
+  const [activeTab, setActiveTab] = useState<'terminal' | 'arena'>('terminal');
 
   return (
-    <main className="h-screen w-screen overflow-hidden flex flex-col bg-black text-zinc-400 font-mono p-2 md:p-4">
-      {/* Top Console Bar */}
-      <div className="flex-none mb-2">
+    <main className="h-screen w-screen overflow-hidden flex flex-col bg-zinc-50 dark:bg-[#050505] text-zinc-600 dark:text-zinc-400 font-mono p-4 gap-4 transition-colors duration-500">
+      {/* Top Navigation */}
+      <div className="flex-none">
         <Navbar />
       </div>
 
-      {/* Main Bezel Container */}
-      <div className="flex-1 min-h-0 border-[2px] md:border-[4px] border-zinc-900 rounded-xl md:rounded-2xl bg-zinc-950 relative flex flex-col shadow-[0_0_50px_rgba(0,0,0,0.8)] overflow-y-auto lg:overflow-hidden crt-blue-glow">
-        {/* Subtle Scanline Overlay */}
-        <div className="absolute inset-0 pointer-events-none opacity-[0.03] crt-scanlines z-50" />
+      {/* Beta Disclaimer Banner */}
+      <div className="flex-none px-4 py-2 bg-blue-600/5 dark:bg-blue-500/5 border border-blue-600/10 dark:border-blue-500/20 rounded-xl flex items-center justify-between transition-colors">
+        <div className="flex items-center gap-3">
+          <div className="px-2 py-0.5 rounded bg-gold text-[9px] font-black text-black uppercase tracking-tighter italic">BETA_V0.0.1</div>
+          <span className="text-[10px] font-bold text-zinc-500 dark:text-zinc-500 uppercase tracking-widest">
+            Falken Protocol is currently in early beta. Smart contracts are on Base Sepolia. Use with testnet funds only.
+          </span>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" />
+          <span className="text-[9px] font-black text-blue-600 dark:text-blue-500 uppercase tracking-[0.2em]">Live_Status: Optimizing</span>
+        </div>
+      </div>
+
+      {/* Main Command Center Grid */}
+      <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-12 gap-4">
         
-        {/* Header Ribbon */}
-        <div className="flex-none p-4 md:p-6 border-b border-zinc-800/50 flex flex-col md:flex-row justify-between items-center gap-4 bg-zinc-900/20 crt-flicker">
-          <div className="flex items-center gap-4">
-            <div className="w-3 h-3 rounded-full bg-red-500 animate-pulse shadow-[0_0_10px_rgba(239,68,68,0.5)]" />
-            <h1 className="text-xl md:text-2xl font-black text-white tracking-tighter uppercase italic crt-text-glow">
-              MISSION <span className="text-blue-500">ARENA</span> ACTIVE
-            </h1>
+        {/* Left Column: Intelligence Lens (Rankings) [3 Cols] */}
+        <div className="lg:col-span-3 border border-zinc-200 dark:border-zinc-900 bg-white dark:bg-[#080808] rounded-xl flex flex-col min-h-0 shadow-sm dark:shadow-2xl overflow-hidden transition-colors">
+          <div className="flex-none px-4 py-3 bg-zinc-100/50 dark:bg-zinc-900/20 border-b border-zinc-200 dark:border-zinc-900 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <ShieldCheck className="w-4 h-4 text-blue-600 dark:text-blue-500" />
+              <span className="text-[10px] font-mono font-black uppercase tracking-[0.3em] text-gold">Intelligence_Lens</span>
+            </div>
           </div>
-          
-          <div className="flex items-center gap-3">
-            <button 
-              onClick={handleNewMatch}
-              className="bg-blue-600 hover:bg-blue-500 text-white text-[10px] md:text-xs font-black px-4 py-2 rounded-lg transition-all uppercase tracking-widest shadow-[0_0_15px_rgba(37,99,235,0.3)] active:scale-95"
-            >
-              + Initiate Match
-            </button>
+          <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
+            <Leaderboard />
           </div>
         </div>
 
-        {/* Console Grid */}
-        <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-4 lg:overflow-hidden">
-          {/* Left Column: Intelligence Lens (Rankings) */}
-          <div className="border-b lg:border-b-0 lg:border-r border-zinc-800/50 flex flex-col min-h-0">
-            <div className="p-3 bg-zinc-900/40 border-b border-zinc-800/50">
-              <span className="text-[10px] font-bold text-zinc-500 tracking-[0.2em] uppercase">SYSTEM_RANKINGS</span>
+        {/* Center Column: The Primary Feed [6 Cols] */}
+        <div className="lg:col-span-6 border border-zinc-200 dark:border-zinc-900 bg-white dark:bg-[#080808] rounded-xl flex flex-col min-h-0 shadow-sm dark:shadow-2xl overflow-hidden transition-colors">
+          <div className="flex-none px-4 py-3 bg-zinc-100/50 dark:bg-zinc-900/20 border-b border-zinc-200 dark:border-zinc-900 flex items-center justify-between">
+            <div className="flex gap-6">
+              <button 
+                onClick={() => setActiveTab('terminal')}
+                className={`flex items-center gap-3 text-[10px] font-mono font-black tracking-[0.3em] uppercase transition-all ${activeTab === 'terminal' ? 'text-gold underline underline-offset-4 decoration-blue-500/50' : 'text-zinc-400 dark:text-zinc-600 hover:text-gold'}`}
+              >
+                <TerminalIcon className={`w-4 h-4 ${activeTab === 'terminal' ? 'text-blue-600 dark:text-blue-500' : 'text-zinc-300 dark:text-zinc-700'}`} />
+                Intelligence_Terminal
+              </button>
+              <button 
+                onClick={() => setActiveTab('arena')}
+                className={`flex items-center gap-3 text-[10px] font-mono font-black tracking-[0.3em] uppercase transition-all ${activeTab === 'arena' ? 'text-gold underline underline-offset-4 decoration-blue-500/50' : 'text-zinc-400 dark:text-zinc-600 hover:text-gold'}`}
+              >
+                <Swords className={`w-4 h-4 ${activeTab === 'arena' ? 'text-blue-600 dark:text-blue-500' : 'text-zinc-300 dark:text-zinc-700'}`} />
+                Engagement_Feed
+              </button>
             </div>
-            <div className="flex-1 overflow-y-auto p-4 lg:min-w-[200px]">
-              <Leaderboard />
+            <div className="flex items-center gap-3">
+              <div className="flex gap-1.5">
+                <div className="w-1.5 h-1.5 rounded-full bg-blue-500/30 dark:bg-blue-500/50 animate-pulse" />
+                <div className="w-1.5 h-1.5 rounded-full bg-blue-500/30 dark:bg-blue-500/50" />
+              </div>
             </div>
           </div>
-
-          {/* Center Column: The Battle Feed */}
-          <div className="lg:col-span-2 border-b lg:border-b-0 lg:border-r border-zinc-800/50 flex flex-col min-h-0 bg-black/40">
-            <div className="p-3 bg-zinc-900/40 border-b border-zinc-800/50 flex justify-between items-center">
-              <div className="flex gap-4">
-                <button 
-                  onClick={() => setActiveTab('arena')}
-                  className={`flex items-center gap-2 text-[10px] font-bold tracking-[0.2em] uppercase transition-colors ${activeTab === 'arena' ? 'text-white' : 'text-zinc-600 hover:text-zinc-400'}`}
-                >
-                  <Swords className={`w-3 h-3 ${activeTab === 'arena' ? 'text-red-500' : 'text-zinc-700'}`} />
-                  LIVE_ENGAGEMENT_FEED
-                </button>
-                <button 
-                  onClick={() => setActiveTab('terminal')}
-                  className={`flex items-center gap-2 text-[10px] font-bold tracking-[0.2em] uppercase transition-colors ${activeTab === 'terminal' ? 'text-white' : 'text-zinc-600 hover:text-zinc-400'}`}
-                >
-                  <TerminalIcon className={`w-3 h-3 ${activeTab === 'terminal' ? 'text-blue-500' : 'text-zinc-700'}`} />
-                  INTELLIGENCE_TERMINAL
-                </button>
-              </div>
-              <div className="flex gap-1">
-                <div className="w-1.5 h-1.5 rounded-full bg-green-500/50" />
-                <div className="w-1.5 h-1.5 rounded-full bg-green-500/50 animate-pulse" />
-              </div>
-            </div>
-            <div className="flex-1 overflow-y-auto lg:min-w-[400px]">
-              {activeTab === 'arena' ? (
-                <div className="p-4">
-                  <MatchFeed />
-                </div>
-              ) : (
+          <div className="flex-1 overflow-hidden relative">
+            {activeTab === 'terminal' ? (
+              <div className="absolute inset-0">
                 <Terminal />
-              )}
-            </div>
+              </div>
+            ) : (
+              <div className="absolute inset-0 p-4 overflow-y-auto custom-scrollbar">
+                <MatchFeed />
+              </div>
+            )}
           </div>
+        </div>
 
-          {/* Right Column: Global Telemetry */}
-          <div className="flex flex-col min-h-0 bg-zinc-950">
-            <div className="p-3 bg-zinc-900/40 border-b border-zinc-800/50">
-              <span className="text-[10px] font-bold text-zinc-500 tracking-[0.2em] uppercase">NETWORK_TELEMETRY</span>
+        {/* Right Column: Global Telemetry [3 Cols] */}
+        <div className="lg:col-span-3 flex flex-col gap-4 min-h-0">
+          
+          {/* Module: Network Telemetry */}
+          <div className="flex-1 border border-zinc-200 dark:border-zinc-900 bg-white dark:bg-[#080808] rounded-xl flex flex-col min-h-0 shadow-sm dark:shadow-2xl overflow-hidden transition-colors">
+            <div className="flex-none px-4 py-3 bg-zinc-100/50 dark:bg-zinc-900/20 border-b border-zinc-200 dark:border-zinc-900 flex items-center gap-3">
+              <Activity className="w-4 h-4 text-blue-600 dark:text-blue-500" />
+              <span className="text-[10px] font-mono font-black uppercase tracking-[0.3em] text-gold">Global_Telemetry</span>
             </div>
-            <div className="flex-1 overflow-y-auto p-4 space-y-6 lg:min-w-[200px]">
+            <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
               <StatsGrid />
-              <div className="p-4 border border-zinc-800 rounded-xl bg-zinc-900/20">
-                <h3 className="text-[10px] font-bold text-zinc-500 mb-3 uppercase tracking-widest">Protocol Status</h3>
+              
+              <div className="p-4 border border-zinc-200 dark:border-zinc-900 bg-zinc-50 dark:bg-zinc-900/10 rounded-xl space-y-4">
+                <div className="flex items-center justify-between">
+                  <span className="text-[9px] font-black text-zinc-400 dark:text-zinc-600 uppercase tracking-widest">Protocol_Link</span>
+                  <div className="px-2 py-0.5 rounded bg-blue-600/5 dark:bg-blue-500/10 border border-blue-600/10 dark:border-blue-500/20 text-[8px] font-bold text-blue-600 dark:text-blue-500 uppercase">Secure</div>
+                </div>
                 <div className="space-y-2">
                   <div className="flex justify-between text-[10px]">
-                    <span className="text-zinc-600">Sync Status:</span>
-                    <span className="text-green-500 font-bold">OPTIMAL</span>
+                    <span className="text-zinc-400 dark:text-zinc-500 uppercase tracking-tighter">Network</span>
+                    <span className="text-zinc-900 dark:text-zinc-200 font-bold tracking-tight">BASE_SEPOLIA</span>
                   </div>
                   <div className="flex justify-between text-[10px]">
-                    <span className="text-zinc-600">Active Agents:</span>
-                    <span className="text-blue-400 font-bold">SYNCHRONIZED</span>
+                    <span className="text-zinc-400 dark:text-zinc-500 uppercase tracking-tighter">Sync_Status</span>
+                    <span className="text-blue-600 dark:text-blue-500 font-bold tracking-tight uppercase">Optimal</span>
                   </div>
                   <div className="flex justify-between text-[10px]">
-                    <span className="text-zinc-600">Network:</span>
-                    <span className="text-zinc-400">BASE_SEPOLIA</span>
+                    <span className="text-zinc-400 dark:text-zinc-500 uppercase tracking-tighter">Node_ID</span>
+                    <span className="text-zinc-900 dark:text-zinc-200 font-bold tabular-nums">0XFALKEN_772</span>
                   </div>
                 </div>
               </div>
             </div>
           </div>
-        </div>
 
-        {/* Bottom Status Ribbon */}
-        <div className="flex-none h-8 bg-zinc-900/80 border-t border-zinc-800 flex items-center px-6 overflow-hidden">
-          <div className="flex items-center gap-8 animate-marquee whitespace-nowrap">
-            <span className="text-[9px] font-bold text-blue-500 uppercase tracking-[0.3em]">
-              FALKEN PROTOCOL // LOGIC IS ABSOLUTE // STAKES ARE REAL // 
-            </span>
-            <span className="text-[9px] font-bold text-zinc-600 uppercase tracking-[0.3em]">
-              $FALK BURN RATE: ACTIVE // MATCH SETTLEMENT: SECURE // 
-            </span>
-            <span className="text-[9px] font-bold text-blue-500 uppercase tracking-[0.3em]">
-              FALKEN PROTOCOL // LOGIC IS ABSOLUTE // STAKES ARE REAL // 
-            </span>
+          {/* Module: System Status Bar */}
+          <div className="flex-none border border-zinc-200 dark:border-zinc-900 bg-white dark:bg-[#080808] rounded-xl p-4 flex flex-col gap-3 shadow-sm dark:shadow-2xl transition-colors">
+            <div className="flex items-center gap-3">
+              <Zap className="w-3 h-3 text-blue-600 dark:text-blue-500 animate-pulse" />
+              <span className="text-[9px] font-black text-zinc-400 dark:text-zinc-500 uppercase tracking-widest">System_Load</span>
+            </div>
+            <div className="w-full h-1 bg-zinc-100 dark:bg-zinc-900 rounded-full overflow-hidden">
+              <div className="h-full bg-blue-600 w-1/3 shadow-[0_0_10px_rgba(37,99,235,0.2)] dark:shadow-[0_0_10px_rgba(37,99,235,0.5)]" />
+            </div>
           </div>
         </div>
       </div>
 
-      <CreateMatchModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} />
+      {/* Bottom Ticker */}
+      <div className="flex-none px-6 py-2 border border-zinc-200 dark:border-zinc-900 bg-white dark:bg-[#080808] rounded-xl flex items-center overflow-hidden shadow-sm dark:shadow-2xl transition-colors">
+        <div className="flex items-center gap-12 animate-marquee whitespace-nowrap">
+          <span className="text-[9px] font-black text-blue-600 dark:text-blue-600 uppercase tracking-[0.4em]">
+            FALKEN PROTOCOL // LOGIC IS ABSOLUTE // STAKES ARE REAL // 
+          </span>
+          <span className="text-[9px] font-black text-zinc-300 dark:text-zinc-800 uppercase tracking-[0.4em]">
+            $FALK BURN_RATE: ACTIVE // MATCH_SETTLEMENT: ENCRYPTED // 
+          </span>
+          <span className="text-[9px] font-black text-blue-600 dark:text-blue-600 uppercase tracking-[0.4em]">
+            SYNCHRONIZING NEURAL ARCHITECTURE... // 
+          </span>
+        </div>
+      </div>
+
     </main>
   );
 }

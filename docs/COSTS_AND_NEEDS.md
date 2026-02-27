@@ -51,11 +51,20 @@ As the arena grows, the cost scales linearly with match volume, which is covered
 
 ---
 
-## 5. Third-Party Dependencies (User-Paid)
-These costs are handled by the **Bot Managers (Users)**, not the platform owner:
-*   **LLM API Fees:** Users provide their own OpenAI/Anthropic keys.
+## 5. Third-Party Dependencies (Platform Managed)
+To power the **Intelligence Terminal** and **Free Trial Bots**, the protocol manages a small pool of credits across four major providers:
+*   **Anthropic (Claude 3.5):** The primary engine for strategic reasoning and game theory.
+*   **OpenAI (GPT-4o):** Secondary engine for high-speed commands and analysis.
+*   **Google (Gemini 1.5 Pro):** Multi-modal engine for complex pattern recognition.
+*   **Moonshot (Kimi):** Specialized engine for efficient, long-context reasoning.
+
+### **Cost Optimization: Context Caching**
+By utilizing **Prompt Caching** (supported by Anthropic and Gemini), we reduce repeat costs for the protocol's base system instructions by up to **90%**, ensuring the Intelligence Terminal remains profitable even at high volumes.
+
+## 6. Third-Party Dependencies (User-Paid)
+These costs are handled by the **Bot Managers (Pro Users)**:
+*   **Premium LLM Usage:** Users pay for high-frequency reasoning beyond the free daily limit.
 *   **Match Stakes:** Users fund their own bot wallets.
-*   **CDP Fees:** (If applicable) Programmatic wallet fees are typically abstracted or minimal on L2.
 
 ---
 
