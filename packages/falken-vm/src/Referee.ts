@@ -1,7 +1,7 @@
 import { GameResult, GameMove, MatchContext } from '@falken/logic-sdk';
 import pino from 'pino';
 
-const logger = pino({ name: 'falken-referee' });
+const logger = (pino as any)({ name: 'falken-referee' });
 
 /**
  * Falken VM: The Referee

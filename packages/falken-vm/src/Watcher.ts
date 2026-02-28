@@ -6,7 +6,7 @@ import { Settler } from './Settler.js';
 import { Fetcher } from './Fetcher.js';
 import pino from 'pino';
 
-const logger = pino({ name: 'falken-watcher' });
+const logger = (pino as any)({ name: 'falken-watcher' });
 
 const FISE_ESCROW_ABI = [
   { 
@@ -81,17 +81,53 @@ export class Watcher {
     });
   }
 
+  /**
+   * Retry fetching match data from Supabase, waiting for both the match
+   * and at least 2 revealed moves (indexer dual-reveal gate may lag).
+   */
+  private async waitForCompleteMatchData(dbMatchId: string, maxRetries = 8, delayMs = 3000) {
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        const result = await this.reconstructor.getMatchHistory(dbMatchId);
+        if (result.moves.length >= 2) {
+          return result; // Both moves available
+        }
+        // Match found but moves incomplete — indexer may still be unmasking
+        if (attempt < maxRetries - 1) {
+          logger.info({ dbMatchId, moveCount: result.moves.length, attempt: attempt + 1 }, 'WAITING_FOR_MOVES_UNMASK');
+          await new Promise(r => setTimeout(r, delayMs));
+          continue;
+        }
+        return result; // Return whatever we have on final attempt
+      } catch (err: any) {
+        if (attempt < maxRetries - 1 && err.message?.includes('Match not found')) {
+          logger.warn({ dbMatchId, attempt: attempt + 1 }, 'WAITING_FOR_INDEXER_SYNC');
+          await new Promise(r => setTimeout(r, delayMs));
+          continue;
+        }
+        throw err;
+      }
+    }
+    throw new Error(`RECONSTRUCTION_FAILED: Match not found after ${maxRetries} retries (${dbMatchId})`);
+  }
+
   private async processMatch(dbMatchId: string, escrowAddress: `0x${string}`, registryAddress: `0x${string}`) {
     try {
-      // Logic moved to internal helper for reuse...
-      const { context, moves } = await this.reconstructor.getMatchHistory(dbMatchId);
+      // Wait for indexer to sync data and unmask both moves
+      const { context, moves } = await this.waitForCompleteMatchData(dbMatchId);
+
+      // Skip if moves are still incomplete after all retries
+      if (moves.length < 2) {
+        logger.info({ dbMatchId, moveCount: moves.length }, 'INCOMPLETE_MOVES // WAITING_FOR_OPPONENT');
+        return;
+      }
       
       // For simulation, we hardcode the CID if the logicRegistry lookup fails
       let jsCode = '';
       try {
         const logicId = await this.client.readContract({
           address: escrowAddress,
-          abi: [{ name: 'fiseMatches', type: 'function', inputs: [{ type: 'uint256' }], outputs: [{ type: 'bytes32' }] }],
+          abi: [{ name: 'fiseMatches', type: 'function', inputs: [{ type: 'uint256' }], outputs: [{ type: 'bytes32' }] }] as const,
           functionName: 'fiseMatches',
           args: [BigInt(dbMatchId.split('-').pop() || '0')]
         });
@@ -99,7 +135,7 @@ export class Watcher {
           address: registryAddress,
           abi: LOGIC_REGISTRY_ABI,
           functionName: 'registry',
-          args: [logicId]
+          args: [logicId as `0x${string}`]
         });
         jsCode = await this.fetcher.fetchLogic(ipfsCID);
       } catch (err) {
@@ -132,18 +168,19 @@ export class Watcher {
         // SIMULATION SETTLEMENT (Direct DB Update)
         const { error } = await this.reconstructor.supabase
           .from('matches')
-          .update({ 
-            status: 'SETTLED', 
+          .update({
+            status: 'SETTLED',
             winner: winner,
             phase: 'COMPLETE'
           })
           .eq('match_id', dbMatchId);
-        
+
         if (error) logger.error({ dbMatchId, error }, 'SIMULATION_DB_UPDATE_FAILED');
         else logger.info({ dbMatchId }, 'SIMULATION_SETTLED_IN_DB');
-      } else if (winner) {
-        // REAL ON-CHAIN SETTLEMENT
-        await this.settler.settle(escrowAddress, BigInt(dbMatchId.split('-').pop() || '0'), winner as `0x${string}`);
+      } else {
+        // REAL ON-CHAIN SETTLEMENT (winner address or null for draw)
+        const onChainMatchId = BigInt(dbMatchId.split('-').pop() || '0');
+        await this.settler.settle(escrowAddress, onChainMatchId, (winner || '0x0000000000000000000000000000000000000000') as `0x${string}`);
       }
     } catch (err: any) {
       logger.error({ dbMatchId, err: err.message }, 'VM_PROCESSING_FAULT');

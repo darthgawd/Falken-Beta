@@ -8,7 +8,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
 dotenv.config(); // Fallback to local
 
-const logger = pino({ name: 'falken-vm-root' });
+const logger = (pino as any)({ name: 'falken-vm-root' });
 
 async function main() {
   const ESCROW_ADDRESS = process.env.FISE_ESCROW_ADDRESS as `0x${string}`;

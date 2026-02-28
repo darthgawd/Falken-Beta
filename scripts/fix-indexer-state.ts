@@ -12,7 +12,7 @@ const supabase = createClient(
 );
 
 async function fix() {
-  const startBlock = 38227965;
+  const startBlock = 38241300;
   console.log(`Forcing sync_state to ${startBlock}...`);
   const { error } = await supabase
     .from('sync_state')

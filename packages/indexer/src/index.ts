@@ -24,7 +24,7 @@ const ESCROW_ABI = [
   { name: 'MatchCreated', type: 'event', inputs: [{ name: 'matchId', type: 'uint256', indexed: true }, { name: 'playerA', type: 'address', indexed: true }, { name: 'stake', type: 'uint256', indexed: false }, { name: 'gameLogic', type: 'address', indexed: false }] },
   { name: 'MatchJoined', type: 'event', inputs: [{ name: 'matchId', type: 'uint256', indexed: true }, { name: 'playerB', type: 'address', indexed: true }] },
   { name: 'RoundStarted', type: 'event', inputs: [{ name: 'matchId', type: 'uint256', indexed: true }, { name: 'roundNumber', type: 'uint8', indexed: false }] },
-  { name: 'MoveCommitted', type: 'event', inputs: [{ name: 'matchId', type: 'uint256', indexed: true }, { name: 'roundNumber', type: 'uint8', indexed: false }, { name: 'player', type: 'address', indexed: true }, { name: 'commitHash', type: 'bytes32', indexed: false }] },
+  { name: 'MoveCommitted', type: 'event', inputs: [{ name: 'matchId', type: 'uint256', indexed: true }, { name: 'roundNumber', type: 'uint8', indexed: false }, { name: 'player', type: 'address', indexed: true }] },
   { name: 'MoveRevealed', type: 'event', inputs: [{ name: 'matchId', type: 'uint256', indexed: true }, { name: 'roundNumber', type: 'uint8', indexed: false }, { name: 'player', type: 'address', indexed: true }, { name: 'move', type: 'uint8', indexed: false }] },
   { name: 'RoundResolved', type: 'event', inputs: [{ name: 'matchId', type: 'uint256', indexed: true }, { name: 'roundNumber', type: 'uint8', indexed: false }, { name: 'winner', type: 'uint8', indexed: false }] },
   { name: 'MatchSettled', type: 'event', inputs: [{ name: 'matchId', type: 'uint256', indexed: true }, { name: 'winner', type: 'address', indexed: true }, { name: 'payout', type: 'uint256', indexed: false }] },
@@ -150,7 +150,7 @@ async function main() {
 
   const handleLogs = async (logs: any[]) => {
     console.log(`Received ${logs.length} logs`);
-    const parsedLogs = parseEventLogs({ abi: ESCROW_ABI, logs });
+    const parsedLogs = parseEventLogs({ abi: ESCROW_ABI, logs }) as any[];
     let lastBlock = 0n;
     for (const log of parsedLogs) {
       console.log(`Processing event: ${log.eventName} at block ${log.blockNumber}`);
@@ -243,14 +243,13 @@ async function processLog(log: any) {
     const { data: match } = await supabase.from('matches').select('player_a').eq('match_id', mId).single();
     const playerLower = args.player.toLowerCase();
     const pIndex = playerLower === match?.player_a ? 1 : 2;
-    await supabase.from('rounds').upsert({ 
-      match_id: mId, 
-      round_number: args.roundNumber, 
-      player_address: playerLower, 
-      player_index: pIndex, 
-      commit_hash: args.commitHash,
+    await supabase.from('rounds').upsert({
+      match_id: mId,
+      round_number: args.roundNumber,
+      player_address: playerLower,
+      player_index: pIndex,
       revealed: false,
-      commit_tx_hash: log.transactionHash 
+      commit_tx_hash: log.transactionHash
     }, { onConflict: 'match_id,round_number,player_address' });
 
     const { data: roundEntries } = await supabase.from('rounds').select('player_address').match({ match_id: mId, round_number: args.roundNumber });

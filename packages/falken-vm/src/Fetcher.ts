@@ -1,6 +1,6 @@
 import pino from 'pino';
 
-const logger = pino({ name: 'falken-fetcher' });
+const logger = (pino as any)({ name: 'falken-fetcher' });
 
 /**
  * Falken IPFS Fetcher

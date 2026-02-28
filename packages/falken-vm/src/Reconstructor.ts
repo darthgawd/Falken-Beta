@@ -2,7 +2,7 @@ import { createClient } from '@supabase/supabase-js';
 import { MatchContext, GameMove } from '@falken/logic-sdk';
 import pino from 'pino';
 
-const logger = pino({ name: 'falken-reconstructor' });
+const logger = (pino as any)({ name: 'falken-reconstructor' });
 
 /**
  * Falken Match Reconstructor

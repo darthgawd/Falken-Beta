@@ -3,7 +3,7 @@ import { privateKeyToAccount } from 'viem/accounts';
 import { baseSepolia } from 'viem/chains';
 import pino from 'pino';
 
-const logger = pino({ name: 'falken-settler' });
+const logger = (pino as any)({ name: 'falken-settler' });
 
 const FISE_ESCROW_ABI = [
   { 
