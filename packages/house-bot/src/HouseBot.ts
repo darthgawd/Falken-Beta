@@ -148,9 +148,10 @@ class HouseBot {
     }
 
     const openByLogic: Record<string, boolean> = {};
-    let activeMatchesCount = 0;
     // Track matches where Joshua is waiting for an opponent (he's playerA but no playerB yet)
     const waitingMatchesByLogic: Record<string, boolean> = {};
+    // Track matches where Joshua is actively playing (opponent joined, game in progress)
+    const activeByLogic: Record<string, boolean> = {};
     
     try {
       // Check recent matches for activity - scan only the last 10 to be safe
@@ -198,10 +199,10 @@ class HouseBot {
             waitingMatchesByLogic[logic] = true;
           }
 
-          // If we are a participant and match is ACTIVE, handle moves
-          if (s === 1 && (isPlayerA || isPlayerB)) {
-            activeMatchesCount++;
-            logger.info({ 
+          // If we are a participant and match is ACTIVE with a real opponent, track it
+          if (s === 1 && (isPlayerA || isPlayerB) && !playerBIsEmpty) {
+            activeByLogic[logic] = true;
+            logger.info({
               matchId: i, 
               round: Number(currentRound), 
               phase: ph,
@@ -225,13 +226,15 @@ class HouseBot {
       logger.error(err, 'Critical error during match scan loop');
     }
 
-    // Ensure liquidity - Create a match for EACH logic if Joshua doesn't already have an OPEN or WAITING one
+    // Ensure liquidity - Create a match for EACH logic if Joshua doesn't already have an OPEN, WAITING, or ACTIVE one
     for (const logic of this.gameLogics) {
       const logicLower = logic.toLowerCase();
       if (openByLogic[logicLower]) {
         logger.info({ logic }, 'Joshua already has an OPEN match for this logic. Skipping.');
       } else if (waitingMatchesByLogic[logicLower]) {
         logger.info({ logic }, 'Joshua has an ACTIVE match waiting for opponent. Skipping.');
+      } else if (activeByLogic[logicLower]) {
+        logger.info({ logic }, 'Joshua is playing an ACTIVE match for this logic. Skipping.');
       } else {
         logger.info({ logic }, 'Joshua has no open matches for this logic. Creating liquidity match.');
         await this.createLiquidity(logic);

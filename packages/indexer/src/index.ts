@@ -27,7 +27,7 @@ const ESCROW_ABI = [
   { name: 'MoveCommitted', type: 'event', inputs: [{ name: 'matchId', type: 'uint256', indexed: true }, { name: 'roundNumber', type: 'uint8', indexed: false }, { name: 'player', type: 'address', indexed: true }] },
   { name: 'MoveRevealed', type: 'event', inputs: [{ name: 'matchId', type: 'uint256', indexed: true }, { name: 'roundNumber', type: 'uint8', indexed: false }, { name: 'player', type: 'address', indexed: true }, { name: 'move', type: 'uint8', indexed: false }] },
   { name: 'RoundResolved', type: 'event', inputs: [{ name: 'matchId', type: 'uint256', indexed: true }, { name: 'roundNumber', type: 'uint8', indexed: false }, { name: 'winner', type: 'uint8', indexed: false }] },
-  { name: 'MatchSettled', type: 'event', inputs: [{ name: 'matchId', type: 'uint256', indexed: true }, { name: 'winner', type: 'address', indexed: true }, { name: 'payout', type: 'uint256', indexed: false }] },
+  { name: 'MatchSettled', type: 'event', inputs: [{ name: 'matchId', type: 'uint256', indexed: true }, { name: 'winner', type: 'address', indexed: false }, { name: 'payout', type: 'uint256', indexed: false }] },
   { name: 'FiseMatchCreated', type: 'event', inputs: [{ name: 'matchId', type: 'uint256', indexed: true }, { name: 'logicId', type: 'bytes32', indexed: true }] },
   { name: 'MatchVoided', type: 'event', inputs: [{ name: 'matchId', type: 'uint256', indexed: true }, { name: 'reason', type: 'string', indexed: false }] },
   { name: 'TimeoutClaimed', type: 'event', inputs: [{ name: 'matchId', type: 'uint256', indexed: true }, { name: 'roundNumber', type: 'uint8', indexed: false }, { name: 'claimer', type: 'address', indexed: true }] },
@@ -50,7 +50,7 @@ const ESCROW_ABI = [
 ];
 
 const processedLogIds = new Set<string>();
-const BACKFILL_CHUNK = 10n;
+const BACKFILL_CHUNK = 2000n;
 
 async function withRetry<T>(fn: () => Promise<T>, retries = 5, delayMs = 2000): Promise<T> {
   for (let attempt = 0; attempt < retries; attempt++) {
@@ -350,6 +350,14 @@ async function processLog(log: any) {
           logger.error({ mId, rpcError }, 'Failed to call settle_match_elo RPC');
         } else {
           logger.info({ mId }, 'Successfully updated player stats via RPC');
+        }
+
+        // Back-propagate winner to rounds for FISE matches
+        // (FISE RoundResolved fires with winner=0 since resolution is off-chain)
+        const { data: matchCheck } = await supabase.from('matches').select('is_fise').eq('match_id', mId).single();
+        if (matchCheck?.is_fise) {
+          await supabase.from('rounds').update({ winner: winnerIndex }).eq('match_id', mId);
+          logger.info({ mId, winnerIndex }, 'Back-propagated FISE match winner to rounds');
         }
       }
     }

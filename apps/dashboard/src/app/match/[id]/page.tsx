@@ -23,6 +23,7 @@ interface Match {
   reveal_deadline: string;
   settle_tx_hash?: string;
   game_logic: string;
+  is_fise?: boolean;
 }
 
 interface Round {
@@ -52,6 +53,7 @@ const MOVE_LABELS: Record<number, string> = {
 
 const RPS_LOGIC = (process.env.NEXT_PUBLIC_RPS_LOGIC_ADDRESS || '').toLowerCase();
 const DICE_LOGIC = (process.env.NEXT_PUBLIC_DICE_LOGIC_ADDRESS || '').toLowerCase();
+const ESCROW_ADDRESS = (process.env.NEXT_PUBLIC_ESCROW_ADDRESS || '').toLowerCase();
 
 export default function MatchDetail({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params);
@@ -173,10 +175,12 @@ export default function MatchDetail({ params }: { params: Promise<{ id: string }
               <div className={`px-3 py-1 rounded-lg font-bold text-[10px] border ${
                 match.game_logic?.toLowerCase() === RPS_LOGIC ? 'bg-orange-500/10 text-orange-500 border-orange-500/20' :
                 match.game_logic?.toLowerCase() === DICE_LOGIC ? 'bg-purple-500/10 text-purple-500 border-purple-500/20' :
+                match.is_fise || (match.game_logic?.toLowerCase() === ESCROW_ADDRESS && ESCROW_ADDRESS) ? 'bg-cyan-500/10 text-cyan-500 border-cyan-500/20' :
                 'bg-zinc-800 text-zinc-500 border-zinc-700'
               }`}>
                 {match.game_logic?.toLowerCase() === RPS_LOGIC ? 'RPS' :
-                 match.game_logic?.toLowerCase() === DICE_LOGIC ? 'DICE' : '??'}
+                 match.game_logic?.toLowerCase() === DICE_LOGIC ? 'DICE' :
+                 match.is_fise || (match.game_logic?.toLowerCase() === ESCROW_ADDRESS && ESCROW_ADDRESS) ? 'FISE' : '??'}
               </div>
               <div className="flex items-center gap-2">
                 <Swords className="w-5 h-5 text-red-500" />
