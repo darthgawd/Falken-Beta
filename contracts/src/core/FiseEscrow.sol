@@ -195,23 +195,26 @@ contract FiseEscrow is MatchEscrow {
         // 2. Record volume in registry
         logicRegistry.recordVolume(logicId, totalPot);
 
-        // 3. Execute payouts
+        // 3. Execute payouts (rake always taken, even on draws)
+        uint256 totalRake = (totalPot * RAKE_BPS) / 10000;     // 5% total
+        uint256 royalty = (totalPot * 200) / 10000;            // 2% Royalty
+        uint256 protocolFee = totalRake - royalty;             // 3% Protocol
+        
+        // Pay rake first
+        _safeTransfer(treasury, protocolFee);
+        _safeTransfer(developer, royalty);
+
         if (m.winsA == m.winsB) {
-            // Draw — refund both
-            _safeTransfer(m.playerA, m.stake);
-            _safeTransfer(m.playerB, m.stake);
-            emit MatchSettled(matchId, address(0), m.stake);
+            // Draw — split remaining pot equally (both get stake minus half rake)
+            uint256 remainingPot = totalPot - totalRake;
+            uint256 splitPayout = remainingPot / 2;
+            _safeTransfer(m.playerA, splitPayout);
+            _safeTransfer(m.playerB, splitPayout);
+            emit MatchSettled(matchId, address(0), splitPayout);
         } else {
             address winner = m.winsA > m.winsB ? m.playerA : m.playerB;
-            uint256 totalRake = (totalPot * RAKE_BPS) / 10000;
-            uint256 royalty = (totalPot * 200) / 10000; // 2% Royalty
-            uint256 protocolFee = totalRake - royalty;  // 3% Protocol
             uint256 payout = totalPot - totalRake;
-
-            _safeTransfer(treasury, protocolFee);
-            _safeTransfer(developer, royalty);
             _safeTransfer(winner, payout);
-
             emit MatchSettled(matchId, winner, payout);
         }
     }
@@ -239,22 +242,26 @@ contract FiseEscrow is MatchEscrow {
         // Record volume
         logicRegistry.recordVolume(logicId, totalPot);
 
-        // Execute payouts
+        // Execute payouts (rake always taken, even on draws)
+        uint256 totalRake = (totalPot * RAKE_BPS) / 10000;     // 5% total
+        uint256 royalty = (totalPot * 200) / 10000;            // 2% Royalty
+        uint256 protocolFee = totalRake - royalty;             // 3% Protocol
+        
+        // Pay rake first
+        _safeTransfer(treasury, protocolFee);
+        _safeTransfer(developer, royalty);
+
         if (winner == address(0)) {
-            // Draw: Refund players
-            _safeTransfer(m.playerA, m.stake);
-            _safeTransfer(m.playerB, m.stake);
-            emit MatchSettled(matchId, address(0), m.stake);
+            // Draw: split remaining pot equally
+            uint256 remainingPot = totalPot - totalRake;
+            uint256 splitPayout = remainingPot / 2;
+            _safeTransfer(m.playerA, splitPayout);
+            _safeTransfer(m.playerB, splitPayout);
+            emit MatchSettled(matchId, address(0), splitPayout);
         } else {
             require(winner == m.playerA || winner == m.playerB, "Invalid winner");
             
-            uint256 totalRake = (totalPot * RAKE_BPS) / 10000;
-            uint256 royalty = (totalPot * 200) / 10000;
-            uint256 protocolFee = totalRake - royalty;
             uint256 payout = totalPot - totalRake;
-
-            _safeTransfer(treasury, protocolFee);
-            _safeTransfer(developer, royalty);
             _safeTransfer(winner, payout);
 
             emit MatchSettled(matchId, winner, payout);

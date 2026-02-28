@@ -102,14 +102,19 @@ contract FISETest is Test {
         vm.prank(playerB);
         escrow.joinMatch{value: 1 ether}(1);
 
+        uint256 initialTreasury = treasury.balance;
+        uint256 initialDeveloper = developer.balance;
         uint256 initialPlayerA = playerA.balance;
         uint256 initialPlayerB = playerB.balance;
 
         vm.prank(referee);
         escrow.settleFiseMatch(1, address(0));
 
-        assertEq(playerA.balance, initialPlayerA + 1 ether);
-        assertEq(playerB.balance, initialPlayerB + 1 ether);
+        // Draw: split pot minus rake (5% = 0.1 ETH, so 1.9 ETH remaining, 0.95 each)
+        assertEq(playerA.balance, initialPlayerA + 0.95 ether);
+        assertEq(playerB.balance, initialPlayerB + 0.95 ether);
+        assertEq(treasury.balance, initialTreasury + 0.06 ether); // 3%
+        assertEq(developer.balance, initialDeveloper + 0.04 ether); // 2%
     }
 
     function test_RevertIf_NonRefereeSettles() public {
@@ -523,7 +528,7 @@ contract FISETest is Test {
         assertEq(uint256(m.status), uint256(MatchEscrow.MatchStatus.SETTLED));
         assertEq(m.winsA, 2);
         assertEq(m.winsB, 2);
-        // Draw - both refunded
+        // Draw: split pot minus rake (5% = 0.01 ETH, so 0.19 ETH remaining, 0.095 each)
     }
 
     function test_ResolveFiseRound_MaxRoundsWithWinner() public {
@@ -816,9 +821,9 @@ contract FISETest is Test {
         vm.prank(referee);
         escrow.resolveFiseRound(1, 0); // 3rd draw on round 5, settles
 
-        // Both refunded (draw)
-        assertEq(playerA.balance, initialPlayerA + 1 ether);
-        assertEq(playerB.balance, initialPlayerB + 1 ether);
+        // Draw: split pot minus rake (5% = 0.1 ETH, so 1.9 ETH remaining, 0.95 each)
+        assertEq(playerA.balance, initialPlayerA + 0.95 ether);
+        assertEq(playerB.balance, initialPlayerB + 0.95 ether);
     }
 
     function test_DrawCounter_ResetsOnWin() public {
