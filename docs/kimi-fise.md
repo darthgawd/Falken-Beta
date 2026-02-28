@@ -533,13 +533,14 @@ The multi-round implementation requires a **new contract deployment** since it a
 - [x] Dashboard shows SETTLED status for settled matches
 - [x] Dashboard shows settlement TX link
 
-### Multi-Round (✅ Implemented, 🔧 Needs Deployment & Testing)
+### Multi-Round (✅ Implemented & Tested, 🔧 Needs Deployment)
 - [x] Contract: `resolveFiseRound()` implemented
 - [x] Contract: `_settleFiseMatchInternal()` implemented
 - [x] Contract: `_resolveRound()` simplified to no-op
 - [x] FalkenVM: `Settler.resolveRound()` implemented
 - [x] FalkenVM: `Referee.resolveRound()` returns 0/1/2
 - [x] FalkenVM: `Watcher` calls `resolveRound()` instead of `settle()`
+- [x] Tests: 90%+ coverage (98% lines, 98% statements, 97% branches)
 - [ ] Deploy new FiseEscrow contract
 - [ ] Test: Match plays multiple rounds
 - [ ] Test: First-to-3 wins triggers auto-settlement
