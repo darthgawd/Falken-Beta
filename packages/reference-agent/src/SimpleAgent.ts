@@ -1,19 +1,28 @@
-import { ethers, Contract } from 'ethers';
+import { ethers, Contract, Interface } from 'ethers';
+import { GoogleGenerativeAI } from "@google/generative-ai";
 import { SaltManager } from './SaltManager.js';
 import dotenv from 'dotenv';
 import pino from 'pino';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import fs from 'fs';
+import { createClient } from '@supabase/supabase-js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
 
 const logger = pino({
+  name: 'llm-agent',
   transport: {
     target: 'pino-pretty',
     options: { colorize: true }
   }
 });
+
+const supabase = createClient(
+  process.env.SUPABASE_URL || '',
+  process.env.SUPABASE_ANON_KEY || ''
+);
 
 const ESCROW_ABI = [
   "function joinMatch(uint256 _matchId) payable",
@@ -21,12 +30,13 @@ const ESCROW_ABI = [
   "function revealMove(uint256 _matchId, uint8 _move, bytes32 _salt)",
   "function getMatch(uint256 _matchId) view returns (address, address, uint256, address, uint8, uint8, uint8, uint8, uint8, uint8, uint256, uint256)",
   "function matchCounter() view returns (uint256)",
-  "function getRoundStatus(uint256 matchId, uint8 round, address player) view returns (bytes32 commitHash, bool revealed)"
+  "function getRoundStatus(uint256 _matchId, uint8 _round, address _player) view returns (bytes32 commitHash, bool revealed)",
+  "function fiseMatches(uint256) view returns (bytes32)"
 ];
 
 /**
- * A simple reference agent that can join games and play RPS.
- * Developers can extend this to add LLM-based strategy.
+ * An LLM-powered autonomous agent for the Falken Protocol.
+ * Uses Gemini 2.5 to analyze game logic and history.
  */
 export class SimpleAgent {
   private provider: ethers.JsonRpcProvider;
@@ -34,6 +44,7 @@ export class SimpleAgent {
   private escrow: Contract;
   private saltManager: SaltManager;
   private escrowAddress: string;
+  private genAI: GoogleGenerativeAI;
 
   constructor(privateKey: string) {
     this.provider = new ethers.JsonRpcProvider(process.env.RPC_URL);
@@ -41,10 +52,11 @@ export class SimpleAgent {
     this.escrowAddress = process.env.ESCROW_ADDRESS!.toLowerCase();
     this.escrow = new Contract(this.escrowAddress, ESCROW_ABI, this.wallet);
     this.saltManager = new SaltManager();
+    this.genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
   }
 
   async run() {
-    logger.info({ address: this.wallet.address }, '🤖 Agent active');
+    logger.info({ address: this.wallet.address }, '🤖 LLM Agent active');
     
     while (true) {
       try {
@@ -67,7 +79,7 @@ export class SimpleAgent {
       return;
     }
 
-    const start = Math.max(1, matchCount - 5);
+    const start = Math.max(1, matchCount - 20);
     for (let i = start; i <= matchCount; i++) {
       try {
         const [
@@ -83,7 +95,7 @@ export class SimpleAgent {
 
         // 1. Discovery: If match is OPEN and we aren't Player A, join it
         if (s === 0 && pA !== myAddress) {
-          // ONLY JOIN RPS JS LOGIC
+          // JOIN RPS or Liars Dice FISE matches
           let logicId = gameLogic.toLowerCase();
           if (logicId === this.escrowAddress) {
              const fiseEscrow = new Contract(this.escrowAddress, ["function fiseMatches(uint256) view returns (bytes32)"], this.provider);
@@ -91,7 +103,8 @@ export class SimpleAgent {
           }
 
           if (logicId === '0xf2f80f1811f9e2c534946f0e8ddbdbd5c1e23b6e48772afe3bccdb9f2e1cfdf3' || 
-              logicId === '0xeab3c0b5d2eb106900c3d910b01a89c6ab7e4fc0a79eca8d75fb7a805cfef9fb') {
+              logicId === '0x2376a7b3448a3b64858d5fcfeca172b49521df5ce706244b0300fdfe653fa28f' ||
+              logicId === '0x2db54e16efc4149dedd2d7efcff126fb6bd2c54090ee2b6460af6a7dd252e318') {
             logger.info({ matchId: i, logicId }, 'Found OPEN FISE JS match, joining...');
             await this.joinMatch(i, stake);
           } else {
@@ -145,73 +158,140 @@ export class SimpleAgent {
     const [commitHash, revealed] = status;
 
     if (phase === 0 && commitHash === ethers.ZeroHash) {
-      // Pick move (Strategy goes here!)
-      let move = 0;
-      
+      // Resolve logicId for strategy
       let logicId = matchData.gameLogic.toLowerCase();
-      
-      // If the logic address is the Escrow itself, it's a FISE JS match
       if (logicId === this.escrowAddress) {
-        try {
-          // Fetch the actual Logic ID from the fiseMatches mapping
-          const fiseEscrow = new Contract(this.escrowAddress, [
-            "function fiseMatches(uint256) view returns (bytes32)"
-          ], this.provider);
-          logicId = (await fiseEscrow.fiseMatches(matchId)).toLowerCase();
-          logger.info({ matchId, logicId }, 'Detected FISE JS match');
-        } catch (err) {
-          logger.warn({ matchId }, 'Failed to fetch FISE logic ID');
-        }
+        const fiseEscrow = new Contract(this.escrowAddress, ["function fiseMatches(uint256) view returns (bytes32)"], this.provider);
+        logicId = (await fiseEscrow.fiseMatches(matchId)).toLowerCase();
       }
 
-      // Detect game type for move range
-      if (logicId === '0xada4dcc50ff30f57dba673b4868f2ed6faacefb6a8fc47fc3876ee8bc385fd47') {
-        // HighRollerDice (1-100)
-        move = Math.floor(Math.random() * 100) + 1;
-        logger.info({ matchId, round, move }, '🎲 Picking HighRoller move (1-100)');
-      } else if (logicId === '0xf2f80f1811f9e2c534946f0e8ddbdbd5c1e23b6e48772afe3bccdb9f2e1cfdf3') {
-        // RockPaperScissorsJS (0-2)
-        move = Math.floor(Math.random() * 3);
-        logger.info({ matchId, round, move }, '🎲 Picking RPS JS move (0-2)');
-      } else if (logicId === '0xeab3c0b5d2eb106900c3d910b01a89c6ab7e4fc0a79eca8d75fb7a805cfef9fb') {
-        // LiarsDiceJS (Packed BID or CALL)
-        const shouldCall = Math.random() < 0.1;
-        if (shouldCall) {
-          move = 0;
-          logger.info({ matchId, round }, '🎲 Picking LiarsDice CALL (0)');
-        } else {
-          const quantity = Math.floor(Math.random() * 3) + 1;
-          const face = Math.floor(Math.random() * 6) + 1;
-          move = (quantity * 10) + face;
-          logger.info({ matchId, round, quantity, face }, '🎲 Picking LiarsDice BID');
-        }
-      } else {
-        // Standard RPS (0-2)
-        move = Math.floor(Math.random() * 3);
-        logger.info({ matchId, round, move }, '🎲 Picking Standard RPS move (0-2)');
-      }
-
+      // Generate salt FIRST so poker strategy can compute hand from it
       const salt = ethers.hexlify(ethers.randomBytes(32));
+      const move = await this.getLLMMove(matchId, round, logicId, salt);
       
-      // Hash calculation MUST match MatchEscrow.sol:
-      // keccak256(abi.encodePacked("FALKEN_V1", address(this), _matchId, m.currentRound, msg.sender, _move, _salt))
       const hash = ethers.solidityPackedKeccak256(
         ['string', 'address', 'uint256', 'uint256', 'address', 'uint256', 'bytes32'],
         ["FALKEN_V1", this.escrowAddress, matchId, round, this.wallet.address, move, salt]
       );
 
       await this.saltManager.saveSalt({ matchId: dbMatchId, round, move, salt });
-      logger.info({ matchId, round, move }, '🎲 Committing move');
+      logger.info({ matchId, round, move }, '🎲 LLM Committing move');
       const tx = await this.escrow.commitMove(matchId, hash);
       await tx.wait();
     } 
     else if (phase === 1 && !revealed) {
       const entry = await this.saltManager.getSalt(dbMatchId, round);
       if (entry) {
-        logger.info({ matchId, round }, '🔓 Revealing move');
+        logger.info({ matchId, round }, '🔓 LLM Revealing move');
         const tx = await this.escrow.revealMove(matchId, entry.move, entry.salt);
         await tx.wait();
       }
+    }
+  }
+
+  private computePokerHand(address: string, salt: string, round: number): number[] {
+    const seedStr = address.toLowerCase() + salt + round;
+    let hash = 0;
+    for (let i = 0; i < seedStr.length; i++) {
+      hash = ((hash << 5) - hash) + seedStr.charCodeAt(i);
+      hash |= 0;
+    }
+    const deck = Array.from({length: 52}, (_, i) => i);
+    for (let i = deck.length - 1; i > 0; i--) {
+      hash = (Math.imul(1664525, hash) + 1013904223) | 0;
+      const j = Math.abs(hash % (i + 1));
+      [deck[i], deck[j]] = [deck[j], deck[i]];
+    }
+    return deck.slice(0, 5);
+  }
+
+  private cardName(card: number): string {
+    const ranks = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'Jack', 'Queen', 'King', 'Ace'];
+    const suits = ['Spades', 'Hearts', 'Diamonds', 'Clubs'];
+    return `${ranks[card % 13]} of ${suits[Math.floor(card / 13)]}`;
+  }
+
+  async getLLMMove(matchId: number, round: number, logicId: string, salt: string): Promise<number> {
+    logger.info({ matchId, round }, '🧠 Querying Gemini 2.5 for strategy...');
+
+    let logicSource = "";
+    try {
+      if (logicId === '0xf2f80f1811f9e2c534946f0e8ddbdbd5c1e23b6e48772afe3bccdb9f2e1cfdf3') {
+        logicSource = fs.readFileSync(path.resolve(__dirname, '../../../rps.js'), 'utf8');
+      } else if (logicId === '0x2db54e16efc4149dedd2d7efcff126fb6bd2c54090ee2b6460af6a7dd252e318') {
+        logicSource = fs.readFileSync(path.resolve(__dirname, '../../../poker.js'), 'utf8');
+      } else {
+        logicSource = fs.readFileSync(path.resolve(__dirname, '../../../liarsdice.js'), 'utf8');
+      }
+    } catch (e) {
+      logger.error('Failed to read logic source');
+    }
+
+    // For Poker Blitz, compute the actual hand so the LLM can make informed decisions
+    let handContext = '';
+    if (logicId === '0x2db54e16efc4149dedd2d7efcff126fb6bd2c54090ee2b6460af6a7dd252e318') {
+      const hand = this.computePokerHand(this.wallet.address, salt, round);
+      const handNames = hand.map((c, i) => `  Index ${i}: ${this.cardName(c)}`);
+      handContext = `
+      YOUR CURRENT HAND (5 cards dealt to you this round):
+${handNames.join('\n')}
+
+      IMPORTANT DISCARD RULES:
+      - Respond with "0" to keep all cards
+      - Discard at most 2 cards (3+ overflows the uint8 move encoding)
+      - List indices in DESCENDING order to avoid leading zeros (e.g., "42" not "24", "30" not "03")
+      - Discarded cards are replaced from the deck
+      `;
+      logger.info({ hand: hand.map(c => this.cardName(c)) }, '🃏 LLM Agent poker hand');
+    }
+
+    const { data: history } = await supabase
+      .from('rounds')
+      .select('*')
+      .eq('match_id', `${this.escrowAddress}-${matchId}`)
+      .order('round_number', { ascending: true });
+
+    const model = this.genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+    const prompt = `
+      You are a strategic Falken Protocol Agent.
+
+      GAME RULES (JavaScript):
+      ${logicSource}
+      ${handContext}
+      MATCH STATUS:
+      - Match ID: ${matchId}
+      - Current Round: ${round}
+      - History: ${JSON.stringify(history)}
+
+      MOVE FORMAT:
+      - RPS: 0=Rock, 1=Paper, 2=Scissors.
+      - Liar's Dice: 0=Call Liar, or (Quantity * 10 + Face) for a Bid.
+      - Poker Blitz: String of indices to DISCARD (e.g., "024" to discard cards 0, 2, and 4). Respond with "0" to keep all.
+
+      Respond ONLY with a JSON object:
+      {
+        "reasoning": "your thought",
+        "move": "<string_or_integer>"
+      }
+    `;
+
+    const result = await model.generateContent(prompt);
+    const response = await result.response;
+    const text = response.text();
+    
+    try {
+      const json = JSON.parse(text.substring(text.indexOf('{'), text.lastIndexOf('}') + 1));
+      let move = Number(json.move);
+      // Clamp to uint8: if move > 255, keep only the top 2 discard indices
+      if (move > 255) {
+        const digits = String(json.move).split('').map(Number).sort((a, b) => b - a);
+        move = Number(digits.slice(0, 2).join(''));
+        logger.warn({ original: json.move, clamped: move }, '⚠️ Move exceeded uint8, clamped to 2 discards');
+      }
+      logger.info({ reasoning: json.reasoning, move }, '🧠 Gemini 2.5 Reasoning');
+      return move;
+    } catch (e) {
+      return 0;
     }
   }
 }

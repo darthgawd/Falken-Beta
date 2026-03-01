@@ -61,8 +61,9 @@ class HouseBot {
     
     // Support multiple logics
     this.gameLogics = [
-      "0xf2f80f1811f9e2c534946f0e8ddbdbd5c1e23b6e48772afe3bccdb9f2e1cfdf3", // RockPaperScissorsJS (JS)
-      "0xeab3c0b5d2eb106900c3d910b01a89c6ab7e4fc0a79eca8d75fb7a805cfef9fb", // LiarsDiceJS (JS)
+      // "0xf2f80f1811f9e2c534946f0e8ddbdbd5c1e23b6e48772afe3bccdb9f2e1cfdf3", // RockPaperScissorsJS (JS)
+      // "0xeab3c0b5d2eb106900c3d910b01a89c6ab7e4fc0a79eca8d75fb7a805cfef9fb", // LiarsDiceJS (JS)
+      "0x2db54e16efc4149dedd2d7efcff126fb6bd2c54090ee2b6460af6a7dd252e318", // ShowdownBlitzPoker (JS)
     ].filter(Boolean) as string[];
 
     logger.info({
@@ -278,17 +279,8 @@ class HouseBot {
     }
   }
 
-  async getStrategicMove(opponentAddress: string, logicAddress: string): Promise<number> {
+  async getStrategicMove(opponentAddress: string, logicAddress: string, matchId?: number, round?: number, salt?: string): Promise<number> {
     const logicLower = logicAddress.toLowerCase();
-    const escrowLower = this.escrowAddress.toLowerCase();
-    
-    // Check if this is a FISE match (gameLogic == escrowAddress)
-    if (logicLower === escrowLower) {
-      logger.info({ logicAddress }, '🎲 FISE match detected, using RPS JS strategy');
-      const move = Math.floor(Math.random() * 3);
-      logger.info({ move }, '🎲 Joshua picking RPS JS move (0-2)');
-      return move;
-    }
     
     // Check if this is the HighRollerDice JS Logic ID
     if (logicLower === '0xada4dcc50ff30f57dba673b4868f2ed6faacefb6a8fc47fc3876ee8bc385fd47') {
@@ -318,6 +310,11 @@ class HouseBot {
         logger.info({ quantity, face }, '🎲 Joshua bidding');
         return bidValue;
       }
+    }
+
+    // Check if this is the ShowdownBlitzPoker Logic ID
+    if (logicLower === '0x2db54e16efc4149dedd2d7efcff126fb6bd2c54090ee2b6460af6a7dd252e318') {
+      return this.getPokerBlitzMove(salt!, round!);
     }
 
     logger.info({ logicLower }, 'Falling through to generic logic contract');
@@ -437,6 +434,83 @@ class HouseBot {
     return roll;
   }
 
+  private computePokerHand(address: string, salt: string, round: number): number[] {
+    const seedStr = address.toLowerCase() + salt + round;
+    let hash = 0;
+    for (let i = 0; i < seedStr.length; i++) {
+      hash = ((hash << 5) - hash) + seedStr.charCodeAt(i);
+      hash |= 0;
+    }
+    const deck = Array.from({length: 52}, (_, i) => i);
+    for (let i = deck.length - 1; i > 0; i--) {
+      hash = (Math.imul(1664525, hash) + 1013904223) | 0;
+      const j = Math.abs(hash % (i + 1));
+      [deck[i], deck[j]] = [deck[j], deck[i]];
+    }
+    return deck.slice(0, 5);
+  }
+
+  private cardName(card: number): string {
+    const ranks = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A'];
+    const suits = ['♠', '♥', '♦', '♣'];
+    return `${ranks[card % 13]}${suits[Math.floor(card / 13)]}`;
+  }
+
+  private getPokerBlitzMove(salt: string, round: number): number {
+    const hand = this.computePokerHand(this.wallet.address, salt, round);
+    const handNames = hand.map(c => this.cardName(c));
+    logger.info({ hand: handNames }, '🃏 Poker hand computed');
+
+    // Evaluate: count rank frequencies
+    const ranks = hand.map(c => c % 13);
+    const counts: Record<number, number> = {};
+    ranks.forEach(r => counts[r] = (counts[r] || 0) + 1);
+
+    const sortedEntries = Object.entries(counts).sort((a, b) => Number(b[1]) - Number(a[1]) || Number(b[0]) - Number(a[0]));
+    const maxCount = Number(sortedEntries[0][1]);
+
+    // Determine which card indices to discard
+    let discardIndices: number[] = [];
+
+    if (maxCount >= 3) {
+      // Trips or quads: keep matched cards, discard the rest
+      const keepRank = Number(sortedEntries[0][0]);
+      discardIndices = ranks
+        .map((r, i) => r !== keepRank ? i : -1)
+        .filter(i => i >= 0);
+    } else if (maxCount === 2) {
+      // Pair (or two pair): keep paired cards, discard the rest
+      const keepRanks = sortedEntries.filter(e => Number(e[1]) >= 2).map(e => Number(e[0]));
+      discardIndices = ranks
+        .map((r, i) => !keepRanks.includes(r) ? i : -1)
+        .filter(i => i >= 0);
+    } else {
+      // Nothing: keep two highest cards, discard 3
+      const indexed = ranks.map((r, i) => ({ rank: r, idx: i }));
+      indexed.sort((a, b) => b.rank - a.rank);
+      const keepIndices = new Set([indexed[0].idx, indexed[1].idx]);
+      discardIndices = ranks
+        .map((_, i) => !keepIndices.has(i) ? i : -1)
+        .filter(i => i >= 0);
+    }
+
+    // Limit to max 2 discards (3-card discards sorted descending almost always exceed uint8 max 255)
+    if (discardIndices.length > 2) {
+      discardIndices = discardIndices.slice(0, 2);
+    }
+
+    if (discardIndices.length === 0) {
+      logger.info('🃏 Keeping all cards (move=0)');
+      return 0;
+    }
+
+    // Sort DESCENDING to avoid leading zeros (e.g., [0,3] → "30" not "03")
+    const moveStr = discardIndices.sort((a, b) => b - a).join('');
+    const move = Number(moveStr);
+    logger.info({ discards: discardIndices, move }, '🃏 Strategic discards');
+    return move;
+  }
+
   async playMatch(matchId: number, matchData: any) {
     const round = Number(matchData.currentRound);
     const phase = Number(matchData.phase); // 0 = COMMIT, 1 = REVEAL
@@ -464,12 +538,13 @@ class HouseBot {
     const revealed = status[1];
 
     if (phase === 0 && commitHash === ethers.ZeroHash) {
-      const opponent = matchData.playerA.toLowerCase() === this.wallet.address.toLowerCase() 
-        ? matchData.playerB 
+      const opponent = matchData.playerA.toLowerCase() === this.wallet.address.toLowerCase()
+        ? matchData.playerB
         : matchData.playerA;
 
-      const move = await this.getStrategicMove(opponent, matchData.gameLogic);
+      // Generate salt FIRST so poker strategy can compute hand from it
       const salt = ethers.hexlify(ethers.randomBytes(32));
+      const move = await this.getStrategicMove(opponent, matchData.gameLogic, matchId, round, salt);
       
       // Hash calculation MUST match MatchEscrow.sol:
       // keccak256(abi.encodePacked("FALKEN_V1", address(this), _matchId, m.currentRound, msg.sender, _move, _salt))

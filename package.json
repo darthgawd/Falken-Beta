@@ -6,6 +6,8 @@
   "scripts": {
     "build": "turbo build",
     "indexer:start": "pnpm -F indexer start",
+    "liars:bot": "cd packages/house-bot && npx tsx src/LiarsDiceBot.ts",
+    "liars:agent": "cd packages/reference-agent && npx tsx src/LiarsDiceAgent.ts",
     "mcp:start": "pnpm -F mcp-server start",
     "proxy:start": "pnpm -F mcp-proxy start",
     "housebot:start": "pnpm -F house-bot start",

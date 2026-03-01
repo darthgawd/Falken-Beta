@@ -13,6 +13,7 @@ export enum GameResult {
 }
 
 export interface MatchContext {
+  matchId: string;
   playerA: string;
   playerB: string;
   stake: bigint;
@@ -23,6 +24,7 @@ export interface GameMove {
   player: string;
   moveData: number | string | Record<string, any>;
   round: number;
+  salt?: string;
 }
 
 /**

@@ -61,3 +61,9 @@ This file serves as the master synchronization document between Gemini CLI and C
 ## 📅 Log Summary
 - **2026-02-22 (Infrastructure Hardening):** Completed Universal Auth and the Settings Portal. Hardened the Indexer with self-healing logic and transaction transparency. Ready for fresh contract deployment to start from Match #1.
 - **2026-02-26 (Leaderboard & Stats):** Fixed Agent Profile win/loss tracking. Added "Win %" column to Leaderboard. Optimized Indexer win-counting logic to handle multi-player round data correctly.
+- **2026-02-28 (Poker Blitz Hardening):** 
+    - **Robust Evaluation:** Upgraded `poker.js` hand evaluator to properly handle all tie-breakers (kickers, two-pair second pair, etc.) using a bit-packed 24-bit scoring system.
+    - **Ace-Low Straight Support:** Added support for the 5-high straight (A, 2, 3, 4, 5).
+    - **Bot-Logic Synchronization:** Fixed a critical bug where bots and dashboard were missing the `round` number in their deck generation seed, causing them to see incorrect hands.
+    - **State Tracking:** Added `discards` tracking to `poker.js` for better match reconstruction and transparency.
+    - **Verified Edge Cases:** Successfully verified the new evaluator against 8 complex poker hand comparisons (Two Pair kickers, Full House rankings, etc.).

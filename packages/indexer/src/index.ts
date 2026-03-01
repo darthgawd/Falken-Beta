@@ -1,4 +1,4 @@
-import { createPublicClient, http, parseEventLogs } from 'viem';
+import { createPublicClient, http, parseEventLogs, decodeFunctionData } from 'viem';
 import { baseSepolia } from 'viem/chains';
 import { createClient } from '@supabase/supabase-js';
 import dotenv from 'dotenv';
@@ -33,6 +33,7 @@ const ESCROW_ABI = [
   { name: 'TimeoutClaimed', type: 'event', inputs: [{ name: 'matchId', type: 'uint256', indexed: true }, { name: 'roundNumber', type: 'uint8', indexed: false }, { name: 'claimer', type: 'address', indexed: true }] },
   { name: 'WithdrawalQueued', type: 'event', inputs: [{ name: 'recipient', type: 'address', indexed: true }, { name: 'amount', type: 'uint256', indexed: false }] },
   { name: 'GameLogicApproved', type: 'event', inputs: [{ name: 'logic', type: 'address', indexed: true }, { name: 'approved', type: 'bool', indexed: false }] },
+  { name: 'revealMove', type: 'function', stateMutability: 'nonpayable', inputs: [{ name: '_matchId', type: 'uint256' }, { name: '_move', type: 'uint8' }, { name: '_salt', type: 'bytes32' }], outputs: [] },
   { name: 'getMatch', type: 'function', stateMutability: 'view', inputs: [{ name: '_matchId', type: 'uint256' }], outputs: [{ name: '', type: 'tuple', components: [
     { name: 'playerA', type: 'address' },
     { name: 'playerB', type: 'address' },
@@ -262,11 +263,25 @@ async function processLog(log: any) {
     const playerLower = args.player.toLowerCase();
     const pIndex = playerLower === match?.player_a ? 1 : 2;
 
+    // Extract salt from revealMove transaction calldata
+    let salt: string | null = null;
+    try {
+      const tx = await publicClient.getTransaction({ hash: log.transactionHash });
+      const decoded = decodeFunctionData({ abi: ESCROW_ABI, data: tx.input });
+      if (decoded.functionName === 'revealMove' && decoded.args) {
+        salt = decoded.args[2] as string; // _salt is the 3rd argument
+        logger.info({ matchId: mId, round: args.roundNumber, player: playerLower }, '🔑 Salt extracted from tx calldata');
+      }
+    } catch (err: any) {
+      logger.warn({ matchId: mId, err: err.message }, 'Failed to extract salt from tx calldata');
+    }
+
     // Step 1: Write to hidden_move (NOT move). Use .update() to avoid nuking commit_hash.
     const { data: updated } = await supabase.from('rounds').update({
       hidden_move: args.move,
       revealed: true,
-      reveal_tx_hash: log.transactionHash
+      reveal_tx_hash: log.transactionHash,
+      ...(salt ? { salt } : {})
     }).match({ match_id: mId, round_number: args.roundNumber, player_address: playerLower }).select();
 
     // Fallback: if update hit 0 rows (missed MoveCommitted), insert the row
@@ -279,7 +294,8 @@ async function processLog(log: any) {
         player_index: pIndex,
         hidden_move: args.move,
         revealed: true,
-        reveal_tx_hash: log.transactionHash
+        reveal_tx_hash: log.transactionHash,
+        ...(salt ? { salt } : {})
       }, { onConflict: 'match_id,round_number,player_address' });
     }
 

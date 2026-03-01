@@ -32,18 +32,21 @@ export class Reconstructor {
     }
 
     const context: MatchContext = {
-      playerA: match.player_a,
-      playerB: match.player_b,
-      stake: BigInt(match.stake_wei),
+      matchId: match.match_id,
+      playerA: (match.player_a || '').toLowerCase(),
+      playerB: (match.player_b || '').toLowerCase(),
+      stake: BigInt(match.stake_wei || '0'),
       config: match.config || {}
     };
 
-    // 2. Fetch All Rounds
+    // 2. Fetch CURRENT round only (not historical rounds)
+    // Each round is independent — using old round data causes stale results
+    const currentRound = match.current_round || 1;
     const { data: rounds, error: roundsError } = await this.supabase
       .from('rounds')
       .select('*')
       .eq('match_id', matchId)
-      .order('round_number', { ascending: true })
+      .eq('round_number', currentRound)
       .order('player_index', { ascending: true });
 
     if (roundsError) {
@@ -51,16 +54,17 @@ export class Reconstructor {
     }
 
     // 3. Assemble Move History
-    // Note: We only include revealed moves.
+    // Note: We only include revealed moves with unmasked data.
     const moves: GameMove[] = (rounds || [])
       .filter(r => r.revealed && r.move !== null)
       .map(r => ({
         player: r.player_address,
         moveData: r.move,
-        round: r.round_number
+        round: r.round_number,
+        salt: r.salt
       }));
 
-    logger.info({ matchId, roundCount: match.current_round, moveCount: moves.length }, 'RECONSTRUCTION_COMPLETE');
+    logger.info({ matchId, currentRound, moveCount: moves.length }, 'RECONSTRUCTION_COMPLETE');
 
     return { context, moves };
   }

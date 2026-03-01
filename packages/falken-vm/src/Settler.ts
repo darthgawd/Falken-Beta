@@ -57,11 +57,17 @@ export class Settler {
     logger.info({ matchId: matchId.toString(), roundWinner }, 'INITIATING_ROUND_RESOLUTION');
 
     try {
+      const nonce = await this.client.getTransactionCount({
+        address: this.account.address,
+        blockTag: 'pending'
+      });
+
       const hash = await this.client.writeContract({
         address: escrowAddress,
         abi: FISE_ESCROW_ABI,
         functionName: 'resolveFiseRound',
-        args: [matchId, roundWinner as 0 | 1 | 2]
+        args: [matchId, roundWinner as 0 | 1 | 2],
+        nonce
       });
 
       logger.info({ hash, matchId: matchId.toString(), roundWinner }, 'ROUND_RESOLUTION_BROADCAST');
@@ -99,11 +105,17 @@ export class Settler {
     try {
       const winnerAddress = winner || '0x0000000000000000000000000000000000000000';
       
+      const nonce = await this.client.getTransactionCount({
+        address: this.account.address,
+        blockTag: 'pending'
+      });
+
       const hash = await this.client.writeContract({
         address: escrowAddress,
         abi: FISE_ESCROW_ABI,
         functionName: 'settleFiseMatch',
-        args: [matchId, winnerAddress as `0x${string}`]
+        args: [matchId, winnerAddress as `0x${string}`],
+        nonce
       });
 
       logger.info({ hash }, 'SETTLEMENT_TRANSACTION_BROADCAST');

@@ -32,6 +32,7 @@ interface Round {
   player_index: number;
   commit_hash: string;
   move: number;
+  salt?: string;
   revealed: boolean;
   winner: number;
   commit_tx_hash?: string;
@@ -49,6 +50,58 @@ const MOVE_LABELS: Record<number, string> = {
   104: '🎲 4',
   105: '🎲 5',
   106: '🎲 6'
+};
+
+const CardDisplay = ({ cardId, isDiscarded = false }: { cardId: number, isDiscarded?: boolean }) => {
+  const suits = ['♣', '♦', '♥', '♠'];
+  const suitColors = { '♣': 'text-zinc-400', '♦': 'text-blue-500', '♥': 'text-red-500', '♠': 'text-zinc-100' };
+  const ranks = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A'];
+  
+  const suit = suits[Math.floor(cardId / 13)];
+  const rank = ranks[cardId % 13];
+  const color = suitColors[suit as keyof typeof suitColors];
+
+  return (
+    <div className={`w-10 h-14 rounded-lg border bg-zinc-950 flex flex-col items-center justify-center relative ${isDiscarded ? 'opacity-30 border-dashed border-zinc-800' : 'border-zinc-700 shadow-lg shadow-black/50'}`}>
+      <span className={`text-xs font-black leading-none ${isDiscarded ? 'text-zinc-800' : 'text-white'}`}>{rank}</span>
+      <span className={`text-sm ${isDiscarded ? 'text-zinc-800' : color}`}>{suit}</span>
+      {isDiscarded && <div className="absolute inset-0 flex items-center justify-center"><div className="w-full h-[1px] bg-red-500/20 rotate-45" /></div>}
+    </div>
+  );
+};
+
+const PokerHand = ({ player, salt, move, round }: { player: string, salt: string, move: number | string, round: number }) => {
+  // 1. Generate deck identically to poker.js
+  const generateDeck = (seedStr: string) => {
+    let hash = 0;
+    for (let i = 0; i < seedStr.length; i++) {
+      hash = ((hash << 5) - hash) + seedStr.charCodeAt(i);
+      hash |= 0;
+    }
+    const deck = Array.from({ length: 52 }, (_, i) => i);
+    for (let i = deck.length - 1; i > 0; i--) {
+      hash = (Math.imul(1664525, hash) + 1013904223) | 0;
+      const j = Math.abs(hash % (i + 1));
+      [deck[i], deck[j]] = [deck[j], deck[i]];
+    }
+    return deck;
+  };
+
+  const deck = generateDeck(player.toLowerCase() + salt.toLowerCase() + round);
+  const initialHand = deck.slice(0, 5);
+  const discardIndices = move.toString() === '0' ? [] : move.toString().split('').map(Number);
+  
+  let finalHand = [...initialHand];
+  let nextIdx = 5;
+  discardIndices.forEach(idx => { if (idx >= 0 && idx < 5) finalHand[idx] = deck[nextIdx++]; });
+
+  return (
+    <div className="flex gap-1.5 bg-black/20 p-2 rounded-xl border border-zinc-800/50">
+      {finalHand.map((cid, i) => (
+        <CardDisplay key={i} cardId={cid} />
+      ))}
+    </div>
+  );
 };
 
 const RPS_LOGIC = (process.env.NEXT_PUBLIC_RPS_LOGIC_ADDRESS || '').toLowerCase();
@@ -157,6 +210,30 @@ export default function MatchDetail({ params }: { params: Promise<{ id: string }
   }, {} as Record<number, { round: number, a: Round | null, b: Round | null, winner: number }>);
 
   const sortedRounds = Object.values(groupedRounds).sort((a, b) => b.round - a.round);
+
+  const getFiseMoveLabel = (move: number, logicId: string) => {
+    const pokerLogicId = '0x2db54e16efc4149dedd2d7efcff126fb6bd2c54090ee2b6460af6a7dd252e318';
+    const liarsLogicId = '0x2376a7b3448a3b64858d5fcfeca172b49521df5ce706244b0300fdfe653fa28f';
+    const liarsLogicIdV2 = '0x526edbe16bbb3f9fad918f457e783644ad0698e4e6961a791f49448c57868f1a';
+
+    const cleanLogicId = logicId.toLowerCase();
+
+    // 1. POKER BLITZ
+    if (cleanLogicId === pokerLogicId) {
+      if (move === 0) return '🃏 KEEP ALL';
+      return `🃏 DISCARD: ${move}`;
+    }
+
+    // 2. LIAR'S DICE
+    if (cleanLogicId === liarsLogicId || cleanLogicId === liarsLogicIdV2) {
+      if (move === 0) return '📢 CALL LIAR';
+      const quantity = Math.floor(move / 10);
+      const face = move % 10;
+      return `🎲 ${quantity} × [${face}]`;
+    }
+
+    return MOVE_LABELS[move] || `MOVE: ${move}`;
+  };
 
   return (
     <main className="min-h-screen bg-black text-zinc-400 font-sans pb-20">
@@ -289,8 +366,13 @@ export default function MatchDetail({ params }: { params: Promise<{ id: string }
                     <div className="flex justify-between items-center">
                       <span className="text-[10px] font-bold text-zinc-600 uppercase">Player A</span>
                       {round.a?.revealed && round.a?.move != null ? (
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-bold text-blue-400">{MOVE_LABELS[round.a.move]}</span>
+                        <div className="flex flex-col items-end gap-3">
+                          <span className="text-sm font-bold text-blue-400">
+                            {match.is_fise ? getFiseMoveLabel(round.a.move, match.game_logic) : (MOVE_LABELS[round.a.move] || `MOVE: ${round.a.move}`)}
+                          </span>
+                          {match.game_logic.toLowerCase() === '0x2db54e16efc4149dedd2d7efcff126fb6bd2c54090ee2b6460af6a7dd252e318' && round.a.salt && (
+                            <PokerHand player={match.player_a} salt={round.a.salt} move={round.a.move} round={round.round} />
+                          )}
                           {round.a.reveal_tx_hash && (
                             <a href={`https://sepolia.basescan.org/tx/${round.a.reveal_tx_hash}`} target="_blank" rel="noopener noreferrer" title="Reveal Transaction">
                               <ExternalLink className="w-3 h-3 text-zinc-700 hover:text-zinc-400" />
@@ -332,13 +414,18 @@ export default function MatchDetail({ params }: { params: Promise<{ id: string }
                     )}
                   </div>
 
-                  {/* Player B&apos;s action */}
+                  {/* Player B's action */}
                   <div className="p-6 space-y-4">
                     <div className="flex justify-between items-center">
                       <span className="text-[10px] font-bold text-zinc-600 uppercase">Player B</span>
                       {round.b?.revealed && round.b?.move != null ? (
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-bold text-purple-400">{MOVE_LABELS[round.b.move]}</span>
+                        <div className="flex flex-col items-end gap-3">
+                          <span className="text-sm font-bold text-purple-400">
+                            {match.is_fise ? getFiseMoveLabel(round.b.move, match.game_logic) : (MOVE_LABELS[round.b.move] || `MOVE: ${round.b.move}`)}
+                          </span>
+                          {match.game_logic.toLowerCase() === '0x2db54e16efc4149dedd2d7efcff126fb6bd2c54090ee2b6460af6a7dd252e318' && round.b.salt && (
+                            <PokerHand player={match.player_b} salt={round.b.salt} move={round.b.move} round={round.round} />
+                          )}
                           {round.b.reveal_tx_hash && (
                             <a href={`https://sepolia.basescan.org/tx/${round.b.reveal_tx_hash}`} target="_blank" rel="noopener noreferrer" title="Reveal Transaction">
                               <ExternalLink className="w-3 h-3 text-zinc-700 hover:text-zinc-400" />
