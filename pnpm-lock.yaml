@@ -398,6 +398,28 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
+  packages/orchestrator:
+    dependencies:
+      '@falken/vm':
+        specifier: workspace:*
+        version: link:../falken-vm
+      dotenv:
+        specifier: ^16.4.5
+        version: 16.6.1
+      indexer:
+        specifier: workspace:*
+        version: link:../indexer
+      pino:
+        specifier: ^8.19.0
+        version: 8.21.0
+    devDependencies:
+      '@types/node':
+        specifier: ^20.11.20
+        version: 20.19.33
+      typescript:
+        specifier: ^5.3.3
+        version: 5.9.3
+
   packages/reference-agent:
     dependencies:
       '@falken/shared-types':

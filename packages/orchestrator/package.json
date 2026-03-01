@@ -1,0 +1,21 @@
+{
+  "name": "orchestrator",
+  "version": "1.0.0",
+  "description": "Single process that runs both the Indexer and Watcher",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "pnpm -F indexer build && pnpm -F @falken/vm build && tsc",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "indexer": "workspace:*",
+    "@falken/vm": "workspace:*",
+    "dotenv": "^16.4.5",
+    "pino": "^8.19.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.20",
+    "typescript": "^5.3.3"
+  }
+}

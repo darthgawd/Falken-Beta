@@ -4,6 +4,10 @@
   "description": "The Falken Virtual Machine: Verifiable Referee Service for FISE Matches.",
   "type": "module",
   "main": "dist/index.js",
+  "exports": {
+    ".": "./dist/index.js",
+    "./Watcher": "./dist/Watcher.js"
+  },
   "scripts": {
     "build": "tsc",
     "start": "node dist/index.js",

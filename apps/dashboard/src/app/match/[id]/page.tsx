@@ -87,7 +87,7 @@ const PokerHand = ({ player, salt, move, round }: { player: string, salt: string
     return deck;
   };
 
-  const deck = generateDeck(player.toLowerCase() + salt.toLowerCase() + round);
+  const deck = generateDeck(player.toLowerCase() + salt.toLowerCase());
   const initialHand = deck.slice(0, 5);
   const discardIndices = move.toString() === '0' ? [] : move.toString().split('').map(Number);
   
@@ -221,7 +221,8 @@ export default function MatchDetail({ params }: { params: Promise<{ id: string }
     // 1. POKER BLITZ
     if (cleanLogicId === pokerLogicId) {
       if (move === 0) return '🃏 KEEP ALL';
-      return `🃏 DISCARD: ${move}`;
+      const count = move.toString().length;
+      return `🃏 DISCARD ${count} card${count > 1 ? 's' : ''}`;
     }
 
     // 2. LIAR'S DICE

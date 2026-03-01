@@ -139,7 +139,7 @@ async function ensureMatchExists(mId: string, onChainId: bigint) {
   }
 }
 
-async function main() {
+export async function startIndexer() {
   console.log('Main function starting...');
   const { data: syncState } = await supabase.from('sync_state').select('last_processed_block').eq('id', 'indexer_main').single();
   const startBlockEnv = process.env.START_BLOCK ? BigInt(process.env.START_BLOCK) : 0n;
@@ -380,4 +380,3 @@ async function processLog(log: any) {
   }
 }
 
-main().catch(err => logger.error(err, 'Fatal error in main loop'));
