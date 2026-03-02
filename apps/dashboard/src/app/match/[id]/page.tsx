@@ -62,10 +62,10 @@ const CardDisplay = ({ cardId, isDiscarded = false }: { cardId: number, isDiscar
   const color = suitColors[suit as keyof typeof suitColors];
 
   return (
-    <div className={`w-10 h-14 rounded-lg border bg-zinc-950 flex flex-col items-center justify-center relative ${isDiscarded ? 'opacity-30 border-dashed border-zinc-800' : 'border-zinc-700 shadow-lg shadow-black/50'}`}>
-      <span className={`text-xs font-black leading-none ${isDiscarded ? 'text-zinc-800' : 'text-white'}`}>{rank}</span>
-      <span className={`text-sm ${isDiscarded ? 'text-zinc-800' : color}`}>{suit}</span>
-      {isDiscarded && <div className="absolute inset-0 flex items-center justify-center"><div className="w-full h-[1px] bg-red-500/20 rotate-45" /></div>}
+    <div className={`w-16 h-24 rounded-xl border bg-zinc-950 flex flex-col items-center justify-center relative ${isDiscarded ? 'opacity-30 border-dashed border-zinc-800' : 'border-zinc-700 shadow-xl shadow-black/80'}`}>
+      <span className={`text-xl font-black leading-none mb-1 ${isDiscarded ? 'text-zinc-800' : 'text-white'}`}>{rank}</span>
+      <span className={`text-2xl ${isDiscarded ? 'text-zinc-800' : color}`}>{suit}</span>
+      {isDiscarded && <div className="absolute inset-0 flex items-center justify-center"><div className="w-full h-[2px] bg-red-500/40 rotate-45" /></div>}
     </div>
   );
 };
@@ -89,14 +89,14 @@ const PokerHand = ({ player, salt, move, round }: { player: string, salt: string
 
   const deck = generateDeck(player.toLowerCase() + salt.toLowerCase());
   const initialHand = deck.slice(0, 5);
-  const discardIndices = move.toString() === '0' ? [] : move.toString().split('').map(Number);
+  const discardIndices = move.toString() === '0' || move.toString() === '' ? [] : move.toString().split('').map(Number);
   
   let finalHand = [...initialHand];
   let nextIdx = 5;
   discardIndices.forEach(idx => { if (idx >= 0 && idx < 5) finalHand[idx] = deck[nextIdx++]; });
 
   return (
-    <div className="flex gap-1.5 bg-black/20 p-2 rounded-xl border border-zinc-800/50">
+    <div className="flex gap-3 bg-black/40 p-4 rounded-2xl border border-zinc-800/50 scale-110 origin-left mt-2">
       {finalHand.map((cid, i) => (
         <CardDisplay key={i} cardId={cid} />
       ))}
@@ -213,16 +213,17 @@ export default function MatchDetail({ params }: { params: Promise<{ id: string }
 
   const getFiseMoveLabel = (move: number, logicId: string) => {
     const pokerLogicId = '0xc60d070e0cede74c425c5c5afe657be8f62a5dfa37fb44e72d0b18522806ffd4';
+    const pokerLogicIdV2 = '0x2db54e16efc4149dedd2d7efcff126fb6bd2c54090ee2b6460af6a7dd252e318';
     const liarsLogicId = '0x2376a7b3448a3b64858d5fcfeca172b49521df5ce706244b0300fdfe653fa28f';
     const liarsLogicIdV2 = '0x526edbe16bbb3f9fad918f457e783644ad0698e4e6961a791f49448c57868f1a';
 
     const cleanLogicId = logicId.toLowerCase();
 
     // 1. POKER BLITZ
-    if (cleanLogicId === pokerLogicId) {
+    if (cleanLogicId === pokerLogicId || cleanLogicId === pokerLogicIdV2) {
       if (move === 0) return '🃏 KEEP ALL';
       const count = move.toString().length;
-      return `🃏 DISCARD ${count} card${count > 1 ? 's' : ''}`;
+      return `🃏 ${count} ${count === 1 ? 'CARD' : 'CARDS'} DISCARDED`;
     }
 
     // 2. LIAR'S DICE
@@ -310,37 +311,30 @@ export default function MatchDetail({ params }: { params: Promise<{ id: string }
 
         {/* Versus Card */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div className={`p-6 rounded-2xl border transition-all ${match.winner === match.player_a ? 'bg-green-500/5 border-green-500/20' : 'bg-zinc-900 border-zinc-800'}`}>
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-8 h-8 rounded-full bg-blue-500/20 flex items-center justify-center text-blue-500 font-bold text-xs">A</div>
-              <span className="text-xs font-bold text-white truncate flex-1">
-                {nicknames[match.player_a.toLowerCase()] || `${match.player_a.slice(0, 6)}...${match.player_a.slice(-4)}`}
-              </span>
-              {match.winner === match.player_a && <Trophy className="w-4 h-4 text-yellow-500" />}
+          <div className={`p-8 flex flex-col items-center gap-4 ${match.winner === match.player_a ? 'bg-emerald-500/5' : ''}`}>
+            <div className="w-16 h-16 rounded-none bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400 font-black italic text-xl">A</div>
+            <div className="text-center">
+              <p className="text-xl font-black text-white uppercase tracking-widest truncate max-w-[240px]">
+                {nicknames[match.player_a.toLowerCase()] || match.player_a.slice(0, 8)}
+              </p>
+              <p className="text-6xl font-black text-white mt-4 tabular-nums italic tracking-tighter">{match.wins_a}</p>
             </div>
-            <p className="text-4xl font-black text-white">{match.wins_a}</p>
-            <p className="text-[10px] font-bold text-zinc-600 uppercase mt-1">Rounds Won</p>
           </div>
 
-          <div className="bg-zinc-900 border border-zinc-800 p-6 rounded-2xl flex items-center justify-center relative overflow-hidden">
-            <div className="absolute inset-0 bg-zinc-800/20 opacity-50 flex items-center justify-center">
-              <Swords className="w-24 h-24 text-zinc-900" />
-            </div>
-            <span className="text-xl font-black text-zinc-700 italic relative z-10">VS</span>
+          <div className="flex flex-col items-center justify-center py-8 grayscale opacity-20">
+            <Swords className="w-16 h-16 text-zinc-500 mb-2" />
+            <span className="text-[10px] font-black text-zinc-600 tracking-[0.5em] uppercase">Versus</span>
           </div>
 
-          <div className={`p-6 rounded-2xl border transition-all ${match.winner === match.player_b ? 'bg-green-500/5 border-green-500/20' : 'bg-zinc-900 border-zinc-800'}`}>
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-8 h-8 rounded-full bg-purple-500/20 flex items-center justify-center text-purple-500 font-bold text-xs">B</div>
-              <span className={`text-xs font-bold truncate flex-1 ${!match.player_b || match.player_b === '0x0000000000000000000000000000000000000000' ? 'text-zinc-600 italic' : 'text-white'}`}>
+          <div className={`p-8 flex flex-col items-center gap-4 ${match.winner === match.player_b ? 'bg-emerald-500/5' : ''}`}>
+            <div className="w-16 h-16 rounded-none bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-400 font-black italic text-xl">B</div>
+            <div className="text-center">
+              <p className="text-xl font-black text-white uppercase tracking-widest truncate max-w-[240px]">
                 {match.player_b && match.player_b !== '0x0000000000000000000000000000000000000000'
-                  ? (nicknames[match.player_b.toLowerCase()] || `${match.player_b.slice(0, 6)}...${match.player_b.slice(-4)}`) 
-                  : 'WAITING_FOR_HANDSHAKE...'}
-              </span>
-              {match.winner === match.player_b && <Trophy className="w-4 h-4 text-yellow-500" />}
+                  ? (nicknames[match.player_b.toLowerCase()] || match.player_b.slice(0, 8)) : 'WAITING...'}
+              </p>
+              <p className="text-6xl font-black text-white mt-4 tabular-nums italic tracking-tighter">{match.wins_b}</p>
             </div>
-            <p className="text-4xl font-black text-white">{match.wins_b}</p>
-            <p className="text-[10px] font-bold text-zinc-600 uppercase mt-1">Rounds Won</p>
           </div>
         </div>
 
@@ -356,115 +350,57 @@ export default function MatchDetail({ params }: { params: Promise<{ id: string }
               <div key={round.round} className="bg-zinc-900/50 border border-zinc-800 rounded-2xl overflow-hidden">
                 <div className="bg-zinc-900 px-6 py-3 border-b border-zinc-800 flex justify-between items-center">
                   <span className="text-xs font-black text-white">ROUND {round.round}</span>
-                  <span className="text-[10px] font-bold text-zinc-500 uppercase">
+                  <span className={`text-xs font-black uppercase tracking-widest ${
+                    round.winner === 0 ? 'text-zinc-500' : 'text-emerald-500'
+                  }`}>
                     {round.winner === 0 ? 'DRAW' : round.winner === 1 ? 'PLAYER A WON' : round.winner === 2 ? 'PLAYER B WON' : 'IN PROGRESS'}
                   </span>
                 </div>
                 
-                <div className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-zinc-800">
+                <div className="grid grid-cols-1 md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-zinc-800 min-h-[320px]">
                   {/* Player A's action */}
-                  <div className="p-6 space-y-4">
-                    <div className="flex justify-between items-center">
-                      <span className="text-[10px] font-bold text-zinc-600 uppercase">Player A</span>
-                      {round.a?.revealed && round.a?.move != null ? (
-                        <div className="flex flex-col items-end gap-3">
-                          <span className="text-sm font-bold text-blue-400">
-                            {match.is_fise ? getFiseMoveLabel(round.a.move, match.game_logic) : (MOVE_LABELS[round.a.move] || `MOVE: ${round.a.move}`)}
-                          </span>
-                          {match.game_logic.toLowerCase() === '0xc60d070e0cede74c425c5c5afe657be8f62a5dfa37fb44e72d0b18522806ffd4' && round.a.salt && (
-                            <PokerHand player={match.player_a} salt={round.a.salt} move={round.a.move} round={round.round} />
-                          )}
-                          {round.a.reveal_tx_hash && (
-                            <a href={`https://sepolia.basescan.org/tx/${round.a.reveal_tx_hash}`} target="_blank" rel="noopener noreferrer" title="Reveal Transaction">
-                              <ExternalLink className="w-3 h-3 text-zinc-700 hover:text-zinc-400" />
-                            </a>
-                          )}
-                        </div>
-                      ) : round.a?.revealed ? (
-                        <div className="flex items-center gap-2">
-                          <span className="text-[10px] font-bold text-yellow-500 px-2 py-1 bg-yellow-500/10 border border-yellow-500/20 rounded animate-pulse">REVEALED</span>
-                          {round.a.reveal_tx_hash && (
-                            <a href={`https://sepolia.basescan.org/tx/${round.a.reveal_tx_hash}`} target="_blank" rel="noopener noreferrer" title="Reveal Transaction">
-                              <ExternalLink className="w-3 h-3 text-zinc-700 hover:text-zinc-400" />
-                            </a>
-                          )}
-                        </div>
-                      ) : round.a?.commit_hash ? (
-                        <div className="flex items-center gap-2">
-                          <span className="text-[10px] font-bold text-zinc-500 px-2 py-1 bg-zinc-800 rounded">COMMITTED</span>
-                          {round.a.commit_tx_hash && (
-                            <a href={`https://sepolia.basescan.org/tx/${round.a.commit_tx_hash}`} target="_blank" rel="noopener noreferrer" title="Commit Transaction">
-                              <ExternalLink className="w-3 h-3 text-zinc-700 hover:text-zinc-400" />
-                            </a>
-                          )}
-                        </div>
-                      ) : (
-                        <span className="text-[10px] font-bold text-zinc-700">
-                          {round.winner !== null ? 'NO ACTION' : 'WAITING...'}
+                  <div className="p-10 flex flex-col justify-center gap-4">
+                    <span className="text-xs font-bold text-zinc-600 uppercase tracking-widest">Player A</span>
+                    {round.a?.revealed && round.a?.move != null ? (
+                      <div className="flex flex-col gap-4">
+                        <span className="text-3xl font-black text-blue-400 italic tracking-tight">
+                          {getFiseMoveLabel(round.a.move, match.game_logic)}
                         </span>
-                      )}
-                    </div>
-                    {round.a?.commit_hash && (
-                      <div className="bg-black/40 p-3 rounded-lg flex items-center justify-between group cursor-pointer" onClick={() => copyToClipboard(round.a?.commit_hash || '')}>
-                        <div className="flex items-center gap-2 truncate">
-                          <Hash className="w-3 h-3 text-zinc-700 flex-shrink-0" />
-                          <span className="text-[10px] font-mono text-zinc-600 truncate">{round.a.commit_hash}</span>
-                        </div>
-                        {copiedHash === round.a.commit_hash ? <CheckCircle2 className="w-3 h-3 text-green-500" /> : <Copy className="w-3 h-3 text-zinc-800 group-hover:text-zinc-500" />}
+                        {(match.game_logic.toLowerCase() === '0xc60d070e0cede74c425c5c5afe657be8f62a5dfa37fb44e72d0b18522806ffd4' || match.game_logic.toLowerCase() === '0x2db54e16efc4149dedd2d7efcff126fb6bd2c54090ee2b6460af6a7dd252e318') && round.a.salt && (
+                          <PokerHand player={match.player_a} salt={round.a.salt} move={round.a.move} round={round.round} />
+                        )}
                       </div>
+                    ) : round.a?.revealed ? (
+                      <span className="text-sm font-bold text-yellow-500 px-2 py-1 bg-yellow-500/10 border border-yellow-500/20 rounded animate-pulse w-fit">REVEALED</span>
+                    ) : round.a?.commit_hash ? (
+                      <span className="text-sm font-bold text-zinc-500 px-2 py-1 bg-zinc-800 rounded w-fit">COMMITTED</span>
+                    ) : (
+                      <span className="text-sm font-bold text-zinc-700 italic uppercase tracking-widest">
+                        {round.winner !== null ? 'NO ACTION' : 'WAITING...'}
+                      </span>
                     )}
                   </div>
 
                   {/* Player B's action */}
-                  <div className="p-6 space-y-4">
-                    <div className="flex justify-between items-center">
-                      <span className="text-[10px] font-bold text-zinc-600 uppercase">Player B</span>
-                      {round.b?.revealed && round.b?.move != null ? (
-                        <div className="flex flex-col items-end gap-3">
-                          <span className="text-sm font-bold text-purple-400">
-                            {match.is_fise ? getFiseMoveLabel(round.b.move, match.game_logic) : (MOVE_LABELS[round.b.move] || `MOVE: ${round.b.move}`)}
-                          </span>
-                          {match.game_logic.toLowerCase() === '0xc60d070e0cede74c425c5c5afe657be8f62a5dfa37fb44e72d0b18522806ffd4' && round.b.salt && (
-                            <PokerHand player={match.player_b} salt={round.b.salt} move={round.b.move} round={round.round} />
-                          )}
-                          {round.b.reveal_tx_hash && (
-                            <a href={`https://sepolia.basescan.org/tx/${round.b.reveal_tx_hash}`} target="_blank" rel="noopener noreferrer" title="Reveal Transaction">
-                              <ExternalLink className="w-3 h-3 text-zinc-700 hover:text-zinc-400" />
-                            </a>
-                          )}
-                        </div>
-                      ) : round.b?.revealed ? (
-                        <div className="flex items-center gap-2">
-                          <span className="text-[10px] font-bold text-yellow-500 px-2 py-1 bg-yellow-500/10 border border-yellow-500/20 rounded animate-pulse">REVEALED</span>
-                          {round.b.reveal_tx_hash && (
-                            <a href={`https://sepolia.basescan.org/tx/${round.b.reveal_tx_hash}`} target="_blank" rel="noopener noreferrer" title="Reveal Transaction">
-                              <ExternalLink className="w-3 h-3 text-zinc-700 hover:text-zinc-400" />
-                            </a>
-                          )}
-                        </div>
-                      ) : round.b?.commit_hash ? (
-                        <div className="flex items-center gap-2">
-                          <span className="text-[10px] font-bold text-zinc-500 px-2 py-1 bg-zinc-800 rounded">COMMITTED</span>
-                          {round.b.commit_tx_hash && (
-                            <a href={`https://sepolia.basescan.org/tx/${round.b.commit_tx_hash}`} target="_blank" rel="noopener noreferrer" title="Commit Transaction">
-                              <ExternalLink className="w-3 h-3 text-zinc-700 hover:text-zinc-400" />
-                            </a>
-                          )}
-                        </div>
-                      ) : (
-                        <span className="text-[10px] font-bold text-zinc-700">
-                          {round.winner !== null ? 'NO ACTION' : 'WAITING...'}
+                  <div className="p-10 flex flex-col justify-center gap-4">
+                    <span className="text-xs font-bold text-zinc-600 uppercase tracking-widest">Player B</span>
+                    {round.b?.revealed && round.b?.move != null ? (
+                      <div className="flex flex-col gap-4">
+                        <span className="text-3xl font-black text-purple-400 italic tracking-tight">
+                          {getFiseMoveLabel(round.b.move, match.game_logic)}
                         </span>
-                      )}
-                    </div>
-                    {round.b?.commit_hash && (
-                      <div className="bg-black/40 p-3 rounded-lg flex items-center justify-between group cursor-pointer" onClick={() => copyToClipboard(round.b?.commit_hash || '')}>
-                        <div className="flex items-center gap-2 truncate">
-                          <Hash className="w-3 h-3 text-zinc-700 flex-shrink-0" />
-                          <span className="text-[10px] font-mono text-zinc-600 truncate">{round.b.commit_hash}</span>
-                        </div>
-                        {copiedHash === round.b.commit_hash ? <CheckCircle2 className="w-3 h-3 text-green-500" /> : <Copy className="w-3 h-3 text-zinc-800 group-hover:text-zinc-500" />}
+                        {(match.game_logic.toLowerCase() === '0xc60d070e0cede74c425c5c5afe657be8f62a5dfa37fb44e72d0b18522806ffd4' || match.game_logic.toLowerCase() === '0x2db54e16efc4149dedd2d7efcff126fb6bd2c54090ee2b6460af6a7dd252e318') && round.b.salt && (
+                          <PokerHand player={match.player_b} salt={round.b.salt} move={round.b.move} round={round.round} />
+                        )}
                       </div>
+                    ) : round.b?.revealed ? (
+                      <span className="text-sm font-bold text-yellow-500 px-2 py-1 bg-yellow-500/10 border border-yellow-500/20 rounded animate-pulse w-fit">REVEALED</span>
+                    ) : round.b?.commit_hash ? (
+                      <span className="text-sm font-bold text-zinc-500 px-2 py-1 bg-zinc-800 rounded w-fit">COMMITTED</span>
+                    ) : (
+                      <span className="text-sm font-bold text-zinc-700 italic uppercase tracking-widest">
+                        {round.winner !== null ? 'NO ACTION' : 'WAITING...'}
+                      </span>
                     )}
                   </div>
                 </div>

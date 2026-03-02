@@ -5,6 +5,7 @@
   "main": "index.js",
   "scripts": {
     "build": "turbo build",
+    "falken:start": "pnpm -F indexer dev & pnpm -F orchestrator start",
     "indexer:start": "pnpm -F indexer start",
     "liars:bot": "cd packages/house-bot && npx tsx src/LiarsDiceBot.ts",
     "liars:agent": "cd packages/reference-agent && npx tsx src/LiarsDiceAgent.ts",
