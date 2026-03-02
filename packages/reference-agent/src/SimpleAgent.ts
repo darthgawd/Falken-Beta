@@ -207,7 +207,7 @@ export class SimpleAgent {
 
   private cardName(card: number): string {
     const ranks = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'Jack', 'Queen', 'King', 'Ace'];
-    const suits = ['Spades', 'Hearts', 'Diamonds', 'Clubs'];
+    const suits = ['Clubs', 'Diamonds', 'Hearts', 'Spades'];
     return `${ranks[card % 13]} of ${suits[Math.floor(card / 13)]}`;
   }
 

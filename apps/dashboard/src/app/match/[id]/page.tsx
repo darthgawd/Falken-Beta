@@ -221,7 +221,8 @@ export default function MatchDetail({ params }: { params: Promise<{ id: string }
     // 1. POKER BLITZ
     if (cleanLogicId === pokerLogicId) {
       if (move === 0) return '🃏 KEEP ALL';
-      return `🃏 DISCARD: ${move}`;
+      const count = move.toString().length;
+      return `🃏 ${count} ${count === 1 ? 'CARD' : 'CARDS'} DISCARDED`;
     }
 
     // 2. LIAR'S DICE
