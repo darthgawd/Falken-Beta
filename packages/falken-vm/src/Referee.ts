@@ -61,8 +61,7 @@ export class Referee {
         return game.checkResult(state);
       `);
 
-      const normalizedMoves = moves.map(m => ({ ...m, round: 1 }));
-      const result = runLogic(context, normalizedMoves);
+      const result = runLogic(context, moves);
       
       if (result === 0) return null;
 
@@ -98,8 +97,8 @@ export class Referee {
   private transformJsCode(jsCode: string): string {
     return jsCode
       .replace(/export\s*\{\s*(\w+)\s+as\s+default\s*\};?/g, 'module.exports = $1;')
-      .replace(/export\s+default\s+class\s+(\w+)/g, 'class $1; module.exports = $1;')
-      .replace(/export\s+class\s+(\w+)/g, 'class $1; module.exports = $1;')
+      .replace(/export\s+default\s+class\s+(\w+)/g, 'class $1')
+      .replace(/export\s+class\s+(\w+)/g, 'class $1')
       .replace(/export\s+\{[^}]*\};?/g, '')
       .replace(/export\s+/g, '');
   }

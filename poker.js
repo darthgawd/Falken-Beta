@@ -9,6 +9,7 @@ export default class ShowdownBlitzPoker {
       playerA: (ctx.playerA || '').toLowerCase(),
       playerB: (ctx.playerB || '').toLowerCase(),
       stake: ctx.stake,
+      matchId: ctx.matchId,  // Store matchId for deck generation
       hands: {},    // Final hand for this specific round
       discards: {}, // Indices discarded by each player
       complete: false,
@@ -35,18 +36,28 @@ export default class ShowdownBlitzPoker {
     if (state.complete || !move.player) return state;
     const player = move.player.toLowerCase();
     
-    // Generate Round-Specific Deck (Seed includes round number)
-    const deck = this.generateDeck(player + move.salt + move.round);
-    const initialHand = deck.slice(0, 5);
+    // SHARED DECK: Use matchId + round as the global seed.
+    // This ensures both players see the SAME deck, but different cards.
+    const deck = this.generateDeck(state.matchId + "_" + move.round);
     
+    // Player A gets cards 0-4, Player B gets cards 5-9
+    const isPlayerA = player === state.playerA;
+    const initialHandOffset = isPlayerA ? 0 : 5;
+    const initialHand = deck.slice(initialHandOffset, initialHandOffset + 5);
+    
+    // Handle '99' as Keep All, otherwise split digits for indices
     const moveData = move.moveData.toString();
     const discardIndices = moveData === '99' ? [] : moveData.split('').map(Number);
     state.discards[player] = discardIndices;
     
     let finalHand = [...initialHand];
-    let nextCardIdx = 5;
-    discardIndices.forEach(idx => {
-      if (idx >= 0 && idx < 5) finalHand[idx] = deck[nextCardIdx++];
+    
+    // Replacement pools: A uses 10-14, B uses 15-19
+    const replacementOffset = isPlayerA ? 10 : 15;
+    discardIndices.forEach((idx, i) => {
+      if (idx >= 0 && idx < 5) {
+        finalHand[idx] = deck[replacementOffset + i];
+      }
     });
 
     state.hands[player] = finalHand;

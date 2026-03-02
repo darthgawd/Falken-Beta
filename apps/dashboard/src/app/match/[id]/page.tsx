@@ -70,8 +70,8 @@ const CardDisplay = ({ cardId, isDiscarded = false }: { cardId: number, isDiscar
   );
 };
 
-const PokerHand = ({ player, salt, move, round }: { player: string, salt: string, move: number | string, round: number }) => {
-  // 1. Generate deck identically to poker.js and bots
+const PokerHand = ({ player, matchId, move, round, playerA }: { player: string, matchId: string, move: number | string, round: number, playerA: string }) => {
+  // 1. Generate deck identically to poker.js
   const generateDeck = (seedStr: string) => {
     let hash = 0;
     for (let i = 0; i < seedStr.length; i++) {
@@ -87,16 +87,21 @@ const PokerHand = ({ player, salt, move, round }: { player: string, salt: string
     return deck;
   };
 
-  // IMPORTANT: Seed MUST exactly match bots: address.toLowerCase() + salt + round
-  // Bots use lowercase salt from hexlify, but we ensure consistency here.
-  const seed = player.toLowerCase() + salt.toLowerCase() + round;
-  const deck = generateDeck(seed);
-  const initialHand = deck.slice(0, 5);
+  // SHARED DECK: matchId + round (MUST match poker.js)
+  const deck = generateDeck(matchId + "_" + round);
+  
+  // A gets 0-4, B gets 5-9
+  const isA = player.toLowerCase() === playerA.toLowerCase();
+  const initialHandOffset = isA ? 0 : 5;
+  const initialHand = deck.slice(initialHandOffset, initialHandOffset + 5);
+  
   const discardIndices = move.toString() === '99' ? [] : move.toString().split('').map(Number);
   
   let finalHand = [...initialHand];
-  let nextIdx = 5;
-  discardIndices.forEach(idx => { if (idx >= 0 && idx < 5) finalHand[idx] = deck[nextIdx++]; });
+  const replacementOffset = isA ? 10 : 15;
+  discardIndices.forEach((idx, i) => { 
+    if (idx >= 0 && idx < 5) finalHand[idx] = deck[replacementOffset + i]; 
+  });
 
   return (
     <div className="flex gap-3 bg-black/40 p-4 rounded-2xl border border-zinc-800/50 scale-110 origin-left mt-2">
@@ -217,13 +222,15 @@ export default function MatchDetail({ params }: { params: Promise<{ id: string }
   const getFiseMoveLabel = (move: number, logicId: string) => {
     const pokerLogicId = '0xc60d070e0cede74c425c5c5afe657be8f62a5dfa37fb44e72d0b18522806ffd4';
     const pokerLogicIdV2 = '0x2db54e16efc4149dedd2d7efcff126fb6bd2c54090ee2b6460af6a7dd252e318';
+    const pokerLogicIdV3 = '0x6f4d505614c94a0bfe3c42be9b809d80a8b1c7cf9bdc2bbc6cbb344eb13f5f47';
+    const pokerLogicIdV4 = '0x4173a4e2e54727578fd50a3f1e721827c4c97c3a2824ca469c0ec730d4264b43';
     const liarsLogicId = '0x2376a7b3448a3b64858d5fcfeca172b49521df5ce706244b0300fdfe653fa28f';
     const liarsLogicIdV2 = '0x526edbe16bbb3f9fad918f457e783644ad0698e4e6961a791f49448c57868f1a';
 
     const cleanLogicId = logicId.toLowerCase();
 
     // 1. POKER BLITZ
-    if (cleanLogicId === pokerLogicId || cleanLogicId === pokerLogicIdV2) {
+    if (cleanLogicId === pokerLogicId || cleanLogicId === pokerLogicIdV2 || cleanLogicId === pokerLogicIdV3 || cleanLogicId === pokerLogicIdV4) {
       if (Number(move) === 99) return '🃏 KEEP ALL';
       const count = move.toString().length;
       return `🃏 ${count} ${count === 1 ? 'CARD' : 'CARDS'} DISCARDED`;
@@ -369,8 +376,8 @@ export default function MatchDetail({ params }: { params: Promise<{ id: string }
                         <span className="text-3xl font-black text-blue-400 italic tracking-tight">
                           {getFiseMoveLabel(round.a.move, match.game_logic)}
                         </span>
-                        {(match.game_logic.toLowerCase() === '0xc60d070e0cede74c425c5c5afe657be8f62a5dfa37fb44e72d0b18522806ffd4' || match.game_logic.toLowerCase() === '0x2db54e16efc4149dedd2d7efcff126fb6bd2c54090ee2b6460af6a7dd252e318') && round.a.salt && (
-                          <PokerHand player={match.player_a} salt={round.a.salt} move={round.a.move} round={round.round} />
+                        {(match.game_logic.toLowerCase() === '0xc60d070e0cede74c425c5c5afe657be8f62a5dfa37fb44e72d0b18522806ffd4' || match.game_logic.toLowerCase() === '0x2db54e16efc4149dedd2d7efcff126fb6bd2c54090ee2b6460af6a7dd252e318' || match.game_logic.toLowerCase() === '0x4173a4e2e54727578fd50a3f1e721827c4c97c3a2824ca469c0ec730d4264b43') && round.a.salt && (
+                          <PokerHand player={match.player_a} matchId={match.match_id} move={round.a.move} round={round.round} playerA={match.player_a} />
                         )}
                       </div>
                     ) : round.a?.revealed ? (
@@ -392,8 +399,8 @@ export default function MatchDetail({ params }: { params: Promise<{ id: string }
                         <span className="text-3xl font-black text-purple-400 italic tracking-tight">
                           {getFiseMoveLabel(round.b.move, match.game_logic)}
                         </span>
-                        {(match.game_logic.toLowerCase() === '0xc60d070e0cede74c425c5c5afe657be8f62a5dfa37fb44e72d0b18522806ffd4' || match.game_logic.toLowerCase() === '0x2db54e16efc4149dedd2d7efcff126fb6bd2c54090ee2b6460af6a7dd252e318') && round.b.salt && (
-                          <PokerHand player={match.player_b} salt={round.b.salt} move={round.b.move} round={round.round} />
+                        {(match.game_logic.toLowerCase() === '0xc60d070e0cede74c425c5c5afe657be8f62a5dfa37fb44e72d0b18522806ffd4' || match.game_logic.toLowerCase() === '0x2db54e16efc4149dedd2d7efcff126fb6bd2c54090ee2b6460af6a7dd252e318' || match.game_logic.toLowerCase() === '0x4173a4e2e54727578fd50a3f1e721827c4c97c3a2824ca469c0ec730d4264b43') && round.b.salt && (
+                          <PokerHand player={match.player_b} matchId={match.match_id} move={round.b.move} round={round.round} playerA={match.player_a} />
                         )}
                       </div>
                     ) : round.b?.revealed ? (

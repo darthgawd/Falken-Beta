@@ -59,7 +59,7 @@ class LLMHouseBot {
     const registry = process.env.LOGIC_REGISTRY_ADDRESS;
     
     this.gameLogics = [
-      "0xc60d070e0cede74c425c5c5afe657be8f62a5dfa37fb44e72d0b18522806ffd4"  // Poker Blitz
+      "0x4173a4e2e54727578fd50a3f1e721827c4c97c3a2824ca469c0ec730d4264b43"  // PokerBlitzV4 (Kimi Fix: Stored matchId)
     ];
 
     this.wallet = new ethers.Wallet(pk!, this.provider);
@@ -156,8 +156,8 @@ class LLMHouseBot {
     }
   }
 
-  private computePokerHand(address: string, salt: string, round: number): number[] {
-    const seedStr = address.toLowerCase() + salt + round;
+  private computePokerHand(address: string, matchId: string, round: number, playerA: string): number[] {
+    const seedStr = matchId + "_" + round;
     let hash = 0;
     for (let i = 0; i < seedStr.length; i++) {
       hash = ((hash << 5) - hash) + seedStr.charCodeAt(i);
@@ -169,7 +169,10 @@ class LLMHouseBot {
       const j = Math.abs(hash % (i + 1));
       [deck[i], deck[j]] = [deck[j], deck[i]];
     }
-    return deck.slice(0, 5);
+    
+    const isA = address.toLowerCase() === playerA.toLowerCase();
+    const offset = isA ? 0 : 5;
+    return deck.slice(offset, offset + 5);
   }
 
   private cardName(card: number): string {
@@ -206,7 +209,7 @@ class LLMHouseBot {
 
       // Generate salt FIRST so we can compute the poker hand
       const salt = ethers.hexlify(ethers.randomBytes(32));
-      const move = await this.getLLMMove(matchId, round, logicId, salt);
+      const move = await this.getLLMMove(matchId, round, logicId, salt, matchData[0]);
       const hash = ethers.solidityPackedKeccak256(
         ['string', 'address', 'uint256', 'uint256', 'address', 'uint256', 'bytes32'],
         ["FALKEN_V1", this.escrowAddress, matchId, round, this.wallet.address, move, salt]
@@ -240,14 +243,16 @@ class LLMHouseBot {
     }
   }
 
-  async getLLMMove(matchId: number, round: number, logicId: string, salt: string): Promise<number> {
+  async getLLMMove(matchId: number, round: number, logicId: string, salt: string, playerA: string): Promise<number> {
     logger.info({ matchId, round }, '🧠 Querying Gemini for next move...');
 
     // 1. Fetch game logic source (local fallback for speed)
     let logicSource = "";
     if (logicId === '0xf2f80f1811f9e2c534946f0e8ddbdbd5c1e23b6e48772afe3bccdb9f2e1cfdf3') {
       logicSource = fs.readFileSync(path.resolve(__dirname, '../../../rps.js'), 'utf8');
-    } else if (logicId === '0xc60d070e0cede74c425c5c5afe657be8f62a5dfa37fb44e72d0b18522806ffd4') {
+    } else if (logicId === '0xc60d070e0cede74c425c5c5afe657be8f62a5dfa37fb44e72d0b18522806ffd4' ||
+              logicId === '0x4173a4e2e54727578fd50a3f1e721827c4c97c3a2824ca469c0ec730d4264b43' ||
+              logicId === '0x6f4d505614c94a0bfe3c42be9b809d80a8b1c7cf9bdc2bbc6cbb344eb13f5f47') {
       logicSource = fs.readFileSync(path.resolve(__dirname, '../../../poker.js'), 'utf8');
     } else {
       logicSource = fs.readFileSync(path.resolve(__dirname, '../../../liarsdice.js'), 'utf8');
@@ -255,8 +260,11 @@ class LLMHouseBot {
 
     // 2. Compute poker hand if applicable
     let handContext = '';
-    if (logicId === '0xc60d070e0cede74c425c5c5afe657be8f62a5dfa37fb44e72d0b18522806ffd4') {
-      const hand = this.computePokerHand(this.wallet.address, salt, round);
+    if (logicId === '0xc60d070e0cede74c425c5c5afe657be8f62a5dfa37fb44e72d0b18522806ffd4' ||
+              logicId === '0x4173a4e2e54727578fd50a3f1e721827c4c97c3a2824ca469c0ec730d4264b43' ||
+              logicId === '0x6f4d505614c94a0bfe3c42be9b809d80a8b1c7cf9bdc2bbc6cbb344eb13f5f47') {
+      const dbMatchId = `${this.escrowAddress}-${matchId}`;
+      const hand = this.computePokerHand(this.wallet.address, dbMatchId, round, playerA);
       const handNames = hand.map((c, i) => `  Index ${i}: ${this.cardName(c)}`);
       handContext = `
       YOUR CURRENT HAND (5 cards dealt to you this round):

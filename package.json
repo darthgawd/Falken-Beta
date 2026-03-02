@@ -28,7 +28,6 @@
     "deploy:logic": "npx tsx scripts/deploy-game.ts",
     "setup:network": "npx tsx scripts/setup-network.ts",
     "recreate:all": "npx tsx scripts/recreate-protocol.ts",
-    "falken:start": "pnpm -F orchestrator build && pnpm -F orchestrator start",
     "contracts:block": "bash -c 'set -a && source .env && set +a && /home/darthgawd/.config/.foundry/bin/cast block-number --rpc-url $RPC_URL'"
   },
   "keywords": [],

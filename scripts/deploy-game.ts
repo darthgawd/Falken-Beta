@@ -58,8 +58,7 @@ async function deployGame() {
   console.log(chalk.green(`✅ Pinned to IPFS. CID: ${cid}`));
 
   // --- STEP 2: Register On-Chain ---
-  console.log(chalk.yellow('
-[2/4] Registering Logic on Base Sepolia...'));
+  console.log(chalk.yellow('\n[2/4] Registering Logic on Base Sepolia...'));
   const provider = new ethers.JsonRpcProvider(RPC_URL);
   const wallet = new ethers.Wallet(ADMIN_PRIVATE_KEY, provider);
   const registry = new ethers.Contract(LOGIC_REGISTRY_ADDRESS, LOGIC_REGISTRY_ABI, wallet);
@@ -79,16 +78,14 @@ async function deployGame() {
   }
 
   // --- STEP 3: Calculate Logic ID ---
-  console.log(chalk.yellow('
-[3/4] Calculating Deterministic Logic ID...'));
+  console.log(chalk.yellow('\n[3/4] Calculating Deterministic Logic ID...'));
   // keccak256 of the CID string
   const cidBytes = ethers.toUtf8Bytes(cid);
   const logicId = ethers.keccak256(cidBytes);
   console.log(chalk.green(`✅ Logic ID generated: ${logicId}`));
 
   // --- STEP 4: Inject into Bots ---
-  console.log(chalk.yellow('
-[4/4] Injecting Logic ID into Bot Architectures...'));
+  console.log(chalk.yellow('\n[4/4] Injecting Logic ID into Bot Architectures...'));
 
   const filesToUpdate = [
     {
@@ -150,8 +147,7 @@ async function deployGame() {
      console.log(chalk.yellow(`⚠️ No files modified. They may already contain the Logic ID.`));
   }
 
-  console.log(chalk.blue.bold('
-🎉 DEPLOYMENT COMPLETE!'));
+  console.log(chalk.blue.bold('\n🎉 DEPLOYMENT COMPLETE!'));
   console.log(chalk.white(`Logic ID: ${chalk.bold(logicId)}`));
   console.log(chalk.gray(`To activate bots with new logic, restart them: pnpm housebot:start && pnpm agent:start
 `));

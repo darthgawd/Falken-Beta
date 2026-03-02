@@ -126,7 +126,8 @@ export class SimpleAgent {
 
           if (logicId === '0xf2f80f1811f9e2c534946f0e8ddbdbd5c1e23b6e48772afe3bccdb9f2e1cfdf3' || 
               logicId === '0x2376a7b3448a3b64858d5fcfeca172b49521df5ce706244b0300fdfe653fa28f' ||
-              logicId === '0xc60d070e0cede74c425c5c5afe657be8f62a5dfa37fb44e72d0b18522806ffd4') {
+              logicId === '0x6f4d505614c94a0bfe3c42be9b809d80a8b1c7cf9bdc2bbc6cbb344eb13f5f47' ||
+              logicId === '0x4173a4e2e54727578fd50a3f1e721827c4c97c3a2824ca469c0ec730d4264b43') {
             logger.info({ matchId: i, logicId }, 'Found OPEN FISE JS match, joining...');
             await this.joinMatch(i, stake);
           } else {
@@ -189,7 +190,7 @@ export class SimpleAgent {
 
       // Generate salt FIRST so poker strategy can compute hand from it
       const salt = ethers.hexlify(ethers.randomBytes(32));
-      const move = await this.getLLMMove(matchId, round, logicId, salt);
+      const move = await this.getLLMMove(matchId, round, logicId, salt, matchData.playerA);
       
       const hash = ethers.solidityPackedKeccak256(
         ['string', 'address', 'uint256', 'uint256', 'address', 'uint256', 'bytes32'],
@@ -220,8 +221,8 @@ export class SimpleAgent {
     }
   }
 
-  private computePokerHand(address: string, salt: string, round: number): number[] {
-    const seedStr = address.toLowerCase() + salt + round;
+  private computePokerHand(address: string, matchId: string, round: number, playerA: string): number[] {
+    const seedStr = matchId + "_" + round;
     let hash = 0;
     for (let i = 0; i < seedStr.length; i++) {
       hash = ((hash << 5) - hash) + seedStr.charCodeAt(i);
@@ -233,7 +234,10 @@ export class SimpleAgent {
       const j = Math.abs(hash % (i + 1));
       [deck[i], deck[j]] = [deck[j], deck[i]];
     }
-    return deck.slice(0, 5);
+    
+    const isA = address.toLowerCase() === playerA.toLowerCase();
+    const offset = isA ? 0 : 5;
+    return deck.slice(offset, offset + 5);
   }
 
   private cardName(card: number): string {
@@ -242,14 +246,16 @@ export class SimpleAgent {
     return `${ranks[card % 13]} of ${suits[Math.floor(card / 13)]}`;
   }
 
-  async getLLMMove(matchId: number, round: number, logicId: string, salt: string): Promise<number> {
+  async getLLMMove(matchId: number, round: number, logicId: string, salt: string, playerA: string): Promise<number> {
     logger.info({ matchId, round }, '🧠 Querying Gemini 2.5 for strategy...');
 
     let logicSource = "";
     try {
       if (logicId === '0xf2f80f1811f9e2c534946f0e8ddbdbd5c1e23b6e48772afe3bccdb9f2e1cfdf3') {
         logicSource = fs.readFileSync(path.resolve(__dirname, '../../../rps.js'), 'utf8');
-      } else if (logicId === '0xc60d070e0cede74c425c5c5afe657be8f62a5dfa37fb44e72d0b18522806ffd4') {
+      } else if (logicId === '0xc60d070e0cede74c425c5c5afe657be8f62a5dfa37fb44e72d0b18522806ffd4' ||
+              logicId === '0x4173a4e2e54727578fd50a3f1e721827c4c97c3a2824ca469c0ec730d4264b43' ||
+              logicId === '0x6f4d505614c94a0bfe3c42be9b809d80a8b1c7cf9bdc2bbc6cbb344eb13f5f47') {
         logicSource = fs.readFileSync(path.resolve(__dirname, '../../../poker.js'), 'utf8');
       } else {
         logicSource = fs.readFileSync(path.resolve(__dirname, '../../../liarsdice.js'), 'utf8');
@@ -260,8 +266,11 @@ export class SimpleAgent {
 
     // For Poker Blitz, compute the actual hand so the LLM can make informed decisions
     let handContext = '';
-    if (logicId === '0xc60d070e0cede74c425c5c5afe657be8f62a5dfa37fb44e72d0b18522806ffd4') {
-      const hand = this.computePokerHand(this.wallet.address, salt, round);
+    if (logicId === '0xc60d070e0cede74c425c5c5afe657be8f62a5dfa37fb44e72d0b18522806ffd4' ||
+              logicId === '0x4173a4e2e54727578fd50a3f1e721827c4c97c3a2824ca469c0ec730d4264b43' ||
+              logicId === '0x6f4d505614c94a0bfe3c42be9b809d80a8b1c7cf9bdc2bbc6cbb344eb13f5f47') {
+      const dbMatchId = `${this.escrowAddress}-${matchId}`;
+      const hand = this.computePokerHand(this.wallet.address, dbMatchId, round, playerA);
       const handNames = hand.map((c, i) => `  Index ${i}: ${this.cardName(c)}`);
       handContext = `
       YOUR CURRENT HAND (5 cards dealt to you this round):
