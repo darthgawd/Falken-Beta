@@ -172,54 +172,20 @@ export class Watcher {
         return;
       }
 
-      // 4. Fetch logic from IPFS (with Local Override for Dev)
+      // 4. Fetch logic from IPFS
       const logicId = await this.client.readContract({
         address: escrowAddress,
         abi: FISE_ESCROW_ABI,
         functionName: 'fiseMatches',
         args: [onChainMatchId]
       });
-
-      let jsCode: string;
-      const useLocal = process.env.LOCAL_LOGIC_OVERRIDE === 'true';
-      logger.info({ useLocal, logicId: (logicId as string).toLowerCase() }, 'CHECKING_LOGIC_SOURCE');
-      
-      if (useLocal) {
-        const fs = await import('node:fs');
-        const path = await import('node:path');
-        const pokerLogicId = '0x2db54e16efc4149dedd2d7efcff126fb6bd2c54090ee2b6460af6a7dd252e318';
-        const pokerLogicIdV2 = '0xc60d070e0cede74c425c5c5afe657be8f62a5dfa37fb44e72d0b18522806ffd4';
-        const pokerLogicIdV3 = '0x6f4d505614c94a0bfe3c42be9b809d80a8b1c7cf9bdc2bbc6cbb344eb13f5f47';
-        const pokerLogicIdV4 = '0x4173a4e2e54727578fd50a3f1e721827c4c97c3a2824ca469c0ec730d4264b43';
-        const rpsLogicId = '0xf2f80f1811f9e2c534946f0e8ddbdbd5c1e23b6e48772afe3bccdb9f2e1cfdf3';
-        
-        const logicIdLower = (logicId as string).toLowerCase();
-        let fileName = '';
-        if (logicIdLower === pokerLogicId || logicIdLower === pokerLogicIdV2 || logicIdLower === pokerLogicIdV3 || logicIdLower === pokerLogicIdV4) fileName = 'poker.js';
-        else if (logicIdLower === rpsLogicId) fileName = 'rps.js';
-
-        if (fileName) {
-          const absolutePath = path.resolve(process.cwd(), '../../', fileName);
-          logger.info({ fileName, absolutePath }, 'ATTEMPTING_LOCAL_OVERRIDE');
-          jsCode = fs.readFileSync(absolutePath, 'utf8');
-        } else {
-          const [ipfsCID] = await this.client.readContract({
-            address: registryAddress,
-            abi: LOGIC_REGISTRY_ABI,
-            functionName: 'registry',
-            args: [logicId as `0x${string}`]
-          });
-          jsCode = await this.fetcher.fetchLogic(ipfsCID);
-        }
-      } else {
-        const [ipfsCID] = await this.client.readContract({
-          address: registryAddress,
-          abi: LOGIC_REGISTRY_ABI,
-          functionName: 'registry',
-          args: [logicId as `0x${string}`]
-        });
-        jsCode = await this.fetcher.fetchLogic(ipfsCID);
-      }
+      const [ipfsCID] = await this.client.readContract({
+        address: registryAddress,
+        abi: LOGIC_REGISTRY_ABI,
+        functionName: 'registry',
+        args: [logicId as `0x${string}`]
+      });
+      const jsCode = await this.fetcher.fetchLogic(ipfsCID);
 
       // 5. Resolve round
       logger.info({ dbMatchId, movesCount: moves.length, moves: moves.map(m => ({ player: m.player?.slice(0,10), moveData: m.moveData, salt: m.salt ? '✓' : '✗' })) }, 'REFEREE_INPUT');

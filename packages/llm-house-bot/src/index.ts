@@ -59,7 +59,7 @@ class LLMHouseBot {
     const registry = process.env.LOGIC_REGISTRY_ADDRESS;
     
     this.gameLogics = [
-      "0x4173a4e2e54727578fd50a3f1e721827c4c97c3a2824ca469c0ec730d4264b43"  // PokerBlitzV4 (Kimi Fix: Stored matchId)
+      "0xf2f80f1811f9e2c534946f0e8ddbdbd5c1e23b6e48772afe3bccdb9f2e1cfdf3"  // RockPaperScissorsJS
     ];
 
     this.wallet = new ethers.Wallet(pk!, this.provider);
