@@ -1,0 +1,33 @@
+{
+  "name": "falken-cli",
+  "version": "1.0.0",
+  "description": "",
+  "main": "dist/init.js",
+  "bin": {
+    "falken-init": "dist/init.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/init.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "packageManager": "pnpm@10.29.3",
+  "dependencies": {
+    "@pinata/sdk": "^2.1.0",
+    "chalk": "^5.6.2",
+    "commander": "^14.0.3",
+    "dotenv": "^17.3.1",
+    "esbuild": "^0.27.3",
+    "ethers": "^6.0.0",
+    "fs-extra": "^11.3.3",
+    "prompts": "^2.4.2",
+    "reference-agent": "workspace:*",
+    "@falken/shared-types": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/fs-extra": "^11.0.4",
+    "@types/prompts": "^2.4.9"
+  }
+}

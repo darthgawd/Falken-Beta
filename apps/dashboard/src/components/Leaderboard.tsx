@@ -2,7 +2,6 @@
 
 import React, { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import { Medal } from 'lucide-react';
 
 interface Profile {
   address: string;
@@ -21,11 +20,13 @@ export function Leaderboard() {
       const { data } = await supabase
         .from('agent_profiles')
         .select('*')
-        .or('nickname.is.null,nickname.not.ilike.StressBot_%') // Include nulls, exclude StressBots
+        .or('nickname.is.null,nickname.not.ilike.StressBot_%')
+        .order('wins', { ascending: false })
         .order('elo', { ascending: false })
         .limit(10);
       
-      setProfiles(data || []);
+      const activeProfiles = (data || []).filter(p => (p.wins + p.losses + p.draws) > 0);
+      setProfiles(activeProfiles);
     }
 
     fetchLeaderboard();
@@ -43,55 +44,60 @@ export function Leaderboard() {
   }, []);
 
   return (
-    <div className="bg-zinc-900 border border-zinc-800 rounded-2xl overflow-hidden">
-      <div className="p-6 border-b border-zinc-800 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Medal className="w-5 h-5 text-yellow-500" />
-          <h2 className="font-bold text-lg text-white">Top Agents</h2>
-        </div>
-        <span className="text-xs font-medium text-zinc-500 uppercase">by ELO Rating</span>
-      </div>
-      <div className="overflow-x-auto">
-        <table className="w-full text-left border-collapse">
-          <thead>
-            <tr className="bg-zinc-950/50">
-              <th className="px-6 py-3 text-xs font-medium text-zinc-500 uppercase tracking-wider">Rank</th>
-              <th className="px-6 py-3 text-xs font-medium text-zinc-500 uppercase tracking-wider">Agent Address</th>
-              <th className="px-6 py-3 text-xs font-medium text-zinc-500 uppercase tracking-wider">ELO</th>
-              <th className="px-6 py-3 text-xs font-medium text-zinc-500 uppercase tracking-wider">W/L/D</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-zinc-800">
-            {profiles.map((profile, index) => (
-              <tr key={profile.address} className="hover:bg-zinc-800/50 transition-colors">
-                <td className="px-6 py-4 text-sm font-medium text-zinc-400">{index + 1}</td>
-                <td className="px-6 py-4">
-                  <div className="flex flex-col">
-                    <span className="text-sm font-bold text-white">
-                      {profile.nickname || `${profile.address.slice(0, 6)}...${profile.address.slice(-4)}`}
-                    </span>
-                    {profile.nickname && (
-                      <span className="text-[10px] font-mono text-zinc-600 uppercase">
-                        {profile.address.slice(0, 6)}...{profile.address.slice(-4)}
-                      </span>
-                    )}
+    <div className="w-full transition-colors duration-500">
+      <div className="flex flex-col gap-1">
+        {profiles.map((profile, index) => {
+          const total = profile.wins + profile.losses + profile.draws;
+          const winRate = total > 0 ? ((profile.wins / total) * 100).toFixed(0) : '0';
+          
+          return (
+            <div 
+              key={profile.address} 
+              className={`flex items-center justify-between p-3 border border-zinc-100 dark:border-zinc-900/50 hover:border-zinc-200 dark:hover:border-zinc-800 transition-all rounded-md group ${
+                index % 2 === 0 
+                  ? 'bg-blue-600/[0.03] dark:bg-blue-500/[0.10]' 
+                  : 'bg-blue-600/[0.08] dark:bg-blue-500/[0.20]'
+              } hover:bg-blue-600/[0.12] dark:hover:bg-blue-500/[0.30]`}
+            >
+              <div className="flex items-center gap-4">
+                <span className={`text-xs font-black w-4 text-center ${index < 3 ? 'text-blue-600 dark:text-blue-500' : 'text-zinc-200 dark:text-zinc-800'}`}>
+                  {String(index + 1).padStart(2, '0')}
+                </span>
+                <div className="flex flex-col">
+                  <span className="text-base font-medium text-zinc-900 dark:text-zinc-100 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors truncate max-w-[120px]">
+                    {profile.nickname || profile.address.slice(0, 6)}
+                  </span>
+                  <span className="text-[10px] font-bold text-zinc-600 dark:text-white tracking-tighter tabular-nums uppercase mt-0.5">
+                    {winRate}% WIN_RATE
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-6 text-right tabular-nums">
+                <div className="flex flex-col">
+                  <span className="text-[10px] font-black text-blue-600 dark:text-gold uppercase tracking-tighter mb-0.5">ELO</span>
+                  <span className="text-base font-black text-zinc-900 dark:text-zinc-100">{profile.elo}</span>
+                </div>
+                <div className="flex flex-col min-w-[70px]">
+                  <span className="text-[10px] font-black text-blue-600 dark:text-gold uppercase tracking-tighter mb-0.5">W/L/D</span>
+                  <div className="text-sm font-bold tracking-tight">
+                    <span className="text-emerald-600 dark:text-green-600">{profile.wins}</span>
+                    <span className="text-zinc-200 dark:text-zinc-800 mx-0.5">/</span>
+                    <span className="text-red-600 dark:text-red-600">{profile.losses}</span>
+                    <span className="text-zinc-200 dark:text-zinc-800 mx-0.5">/</span>
+                    <span className="text-zinc-400 dark:text-zinc-600">{profile.draws}</span>
                   </div>
-                </td>
-                <td className="px-6 py-4 text-sm font-bold text-white">{profile.elo}</td>
-                <td className="px-6 py-4 text-sm text-zinc-400">
-                  <span className="text-green-500">{profile.wins}</span> / <span className="text-red-500">{profile.losses}</span> / <span className="text-zinc-500">{profile.draws}</span>
-                </td>
-              </tr>
-            ))}
-            {profiles.length === 0 && (
-              <tr>
-                <td colSpan={4} className="px-6 py-8 text-center text-sm text-zinc-500">
-                  No agents found in the arena yet.
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+        {profiles.length === 0 && (
+          <div className="py-20 flex flex-col items-center justify-center gap-2 opacity-20 dark:opacity-10 grayscale">
+            <div className="w-8 h-[1px] bg-zinc-400 dark:bg-zinc-800" />
+            <span className="text-[9px] font-black text-zinc-400 dark:text-zinc-500 uppercase tracking-[0.4em]">NO_DATA</span>
+          </div>
+        )}
       </div>
     </div>
   );

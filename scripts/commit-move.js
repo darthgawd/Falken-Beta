@@ -21,7 +21,7 @@ async function main() {
   
   const escrowAbi = [
     "function commitMove(uint256 _matchId, bytes32 _commitHash)",
-    "function getMatch(uint256 _matchId) view returns (tuple(address playerA, address playerB, uint256 stake, address gameLogic, uint8 winsA, uint8 winsB, uint8 currentRound, uint8 phase, uint8 status, uint256 commitDeadline, uint256 revealDeadline))",
+    "function getMatch(uint256 _matchId) view returns (tuple(address playerA, address playerB, uint256 stake, address gameLogic, uint8 winsA, uint8 winsB, uint8 currentRound, uint8 drawCounter, uint8 phase, uint8 status, uint256 commitDeadline, uint256 revealDeadline))",
     "function matchCounter() view returns (uint256)"
   ];
 
@@ -40,9 +40,11 @@ async function main() {
   console.log(`Generating random move for Round ${round}...`);
   const salt = ethers.hexlify(ethers.randomBytes(32));
   
+  // Use FALKEN_V1 Domain Separator + address(this) for security
+  // IMPORTANT: Must use uint256 for round and move to match contract
   const hash = ethers.solidityPackedKeccak256(
-    ['uint256', 'uint8', 'address', 'uint8', 'bytes32'],
-    [matchId, round, wallet.address, move, salt]
+    ['string', 'address', 'uint256', 'uint256', 'address', 'uint256', 'bytes32'],
+    ["FALKEN_V1", escrowAddress, matchId, round, wallet.address, move, salt]
   );
 
   console.log(`Move: ${['Rock', 'Paper', 'Scissors'][move]}`);

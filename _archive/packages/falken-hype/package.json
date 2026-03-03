@@ -1,0 +1,23 @@
+{
+  "name": "falken-hype",
+  "version": "1.0.0",
+  "description": "Autonomous social media update bot for Falken Protocol",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "generate": "tsx src/index.ts --generate",
+    "post": "tsx src/index.ts --post"
+  },
+  "dependencies": {
+    "twitter-api-v2": "^1.16.1",
+    "dotenv": "^17.3.1",
+    "pino": "^10.3.1",
+    "@google/generative-ai": "^0.21.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3",
+    "@types/node": "^25.3.0"
+  }
+}

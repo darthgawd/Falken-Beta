@@ -1,0 +1,10 @@
+[console_scripts]
+wake=wake.cli.__main__:main
+wake-solc=wake.cli.__main__:wake_solc
+
+[wake.plugins.detectors]
+wake-detectors=wake_detectors
+
+[wake.plugins.printers]
+wake-printers=wake_printers
+

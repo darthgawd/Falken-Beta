@@ -24,4 +24,9 @@ interface IGameLogic {
      * @notice Validates if a move is valid for the game.
      */
     function isValidMove(uint8 move) external pure returns (bool);
+
+    /**
+     * @notice Returns the number of round wins required to win the match.
+     */
+    function winsRequired() external view returns (uint8);
 }

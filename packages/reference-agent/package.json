@@ -7,6 +7,7 @@
   "types": "dist/SaltManager.d.ts",
   "scripts": {
     "build": "tsc",
+    "start": "node dist/run.js",
     "typecheck": "tsc --noEmit",
     "dev:disabled": "tsx watch src/run.ts"
   },
@@ -15,10 +16,11 @@
   "license": "ISC",
   "packageManager": "pnpm@10.29.3",
   "dependencies": {
+    "@falken/shared-types": "workspace:*",
+    "@google/generative-ai": "^0.21.0",
     "dotenv": "^17.3.1",
     "ethers": "^6.16.0",
-    "pino": "^10.3.1",
-    "shared-types": "workspace:*"
+    "pino": "^10.3.1"
   },
   "devDependencies": {
     "pino-pretty": "^13.1.3"

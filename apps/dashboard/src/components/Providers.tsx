@@ -7,6 +7,7 @@ import { WagmiProvider } from 'wagmi';
 import { PrivyProvider } from '@privy-io/react-auth';
 import { ReactNode, useState, useEffect } from 'react';
 import { config } from '../wagmi';
+import { ManagerRegistry } from './ManagerRegistry';
 
 export function Providers({ children }: { children: ReactNode }) {
   const [queryClient] = useState(() => new QueryClient());
@@ -19,7 +20,7 @@ export function Providers({ children }: { children: ReactNode }) {
   }, []);
 
   if (!mounted) {
-    return <div className="min-h-screen bg-black" />; // Blank skeleton during hydration
+    return <div className="min-h-screen" />; // Blank skeleton during hydration
   }
 
   if (!appId || appId === 'insert-your-privy-app-id') {
@@ -40,7 +41,7 @@ export function Providers({ children }: { children: ReactNode }) {
     <PrivyProvider
       appId={appId}
       config={{
-        loginMethods: ['email', 'wallet', 'google', 'twitter', 'farcaster'],
+        loginMethods: ['email', 'wallet', 'google', 'twitter', 'github', 'farcaster'],
         appearance: {
           theme: 'dark',
           accentColor: '#3b82f6', // blue-500
@@ -61,6 +62,7 @@ export function Providers({ children }: { children: ReactNode }) {
             chain={baseSepolia}
             apiKey={process.env.NEXT_PUBLIC_COINBASE_API_KEY}
           >
+            <ManagerRegistry />
             {children}
           </OnchainKitProvider>
         </QueryClientProvider>

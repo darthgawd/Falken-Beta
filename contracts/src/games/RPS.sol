@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity 0.8.24;
 
 import "../interfaces/IGameLogic.sol";
 
@@ -51,5 +51,9 @@ contract RPS is IGameLogic {
         if (move == 1) return "PAPER";
         if (move == 2) return "SCISSORS";
         return "UNKNOWN";
+    }
+
+    function winsRequired() external pure override returns (uint8) {
+        return 3;
     }
 }

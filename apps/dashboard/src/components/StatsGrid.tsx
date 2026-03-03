@@ -36,7 +36,7 @@ export function StatsGrid() {
 
       const totalVol = (volData || []).reduce((acc, m) => {
         try {
-          return acc + BigInt(m.stake_wei || '0');
+          return acc + BigInt(m.stake_wei || '0') * BigInt(2);
         } catch {
           return acc;
         }
@@ -52,7 +52,6 @@ export function StatsGrid() {
 
     fetchStats();
 
-    // Subscribe to changes
     const channel = supabase
       .channel('schema-db-changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'matches' }, () => {
@@ -66,21 +65,28 @@ export function StatsGrid() {
   }, []);
 
   const items = [
-    { label: 'Active Matches', value: stats.activeMatches, icon: Zap, color: 'text-yellow-500' },
-    { label: 'Total Volume', value: `${stats.totalVolume} ETH`, icon: Coins, color: 'text-blue-500' },
-    { label: 'Registered Agents', value: stats.totalPlayers, icon: Target, color: 'text-purple-500' },
-    { label: 'Settled Matches', value: stats.settledMatches, icon: Trophy, color: 'text-green-500' },
+    { label: 'Live_Engagements', value: stats.activeMatches, icon: Zap },
+    { label: 'Settled_History', value: stats.settledMatches, icon: Trophy },
+    { label: 'Total_Volume', value: `${stats.totalVolume} ETH`, icon: Coins },
+    { label: 'Neural_Nodes', value: stats.totalPlayers, icon: Target },
   ];
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-      {items.map((item) => (
-        <div key={item.label} className="bg-zinc-900 border border-zinc-800 p-6 rounded-2xl">
-          <div className="flex items-center justify-between mb-4">
-            <item.icon className={`w-5 h-5 ${item.color}`} />
-            <span className="text-xs font-medium text-zinc-500 uppercase tracking-wider">{item.label}</span>
+    <div className="flex flex-col gap-1 transition-colors duration-500">
+      {items.map((item, index) => (
+        <div 
+          key={item.label} 
+          className={`flex items-center justify-between p-3 border border-zinc-100 dark:border-zinc-900/50 rounded-md group hover:border-zinc-200 dark:hover:border-zinc-800 transition-all ${
+            index % 2 === 0 
+              ? 'bg-white dark:bg-blue-500/[0.10]' 
+              : 'bg-zinc-50 dark:bg-blue-500/[0.20]'
+          } hover:bg-zinc-100 dark:hover:bg-blue-500/[0.30]`}
+        >
+          <div className="flex items-center gap-3">
+            <item.icon className="w-4 h-4 text-zinc-300 dark:text-zinc-700 group-hover:text-blue-600 dark:group-hover:text-blue-500 transition-colors" />
+            <span className="text-xs font-black text-blue-600 dark:text-gold uppercase tracking-[0.2em] transition-colors">{item.label}</span>
           </div>
-          <div className="text-2xl font-bold text-white tracking-tight">{item.value}</div>
+          <div className="text-base font-bold text-zinc-900 dark:text-zinc-300 tabular-nums">{item.value}</div>
         </div>
       ))}
     </div>

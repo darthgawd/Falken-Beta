@@ -5,7 +5,10 @@
   "main": "index.js",
   "scripts": {
     "build": "turbo build",
+    "falken:start": "pnpm -F indexer dev & pnpm -F @falken/vm dev",
     "indexer:start": "pnpm -F indexer start",
+    "liars:bot": "cd packages/house-bot && npx tsx src/LiarsDiceBot.ts",
+    "liars:agent": "cd packages/reference-agent && npx tsx src/LiarsDiceAgent.ts",
     "mcp:start": "pnpm -F mcp-server start",
     "proxy:start": "pnpm -F mcp-proxy start",
     "housebot:start": "pnpm -F house-bot start",
@@ -15,11 +18,16 @@
     "generate-wallet": "pnpm exec node scripts/generate-wallet.js",
     "generate-openapi": "node scripts/generate-openapi.js",
     "force-new-match": "node scripts/force-new-match.js",
+    "hype:gen": "pnpm -F falken-hype generate",
+    "hype:post": "pnpm -F falken-hype post",
     "contracts:test": "cd contracts && /home/darthgawd/.config/.foundry/bin/forge test",
     "contracts:coverage": "cd contracts && /home/darthgawd/.config/.foundry/bin/forge coverage",
     "contracts:coverage:core": "cd contracts && /home/darthgawd/.config/.foundry/bin/forge coverage --report lcov && cd .. && node scripts/check-core-coverage.js",
-    "contracts:deploy": "bash -c 'set -a && source .env && set +a && cd contracts && /home/darthgawd/.config/.foundry/bin/forge script script/Deploy.s.sol:DeployBotByte --rpc-url $RPC_URL --broadcast'",
+    "contracts:deploy": "bash -c 'set -a && source .env && set +a && cd contracts && /home/darthgawd/.config/.foundry/bin/forge script script/Deploy.s.sol:DeployFalken --rpc-url $RPC_URL --broadcast'",
     "contracts:deploy:dice": "bash -c 'set -a && source .env && set +a && cd contracts && /home/darthgawd/.config/.foundry/bin/forge script script/DeploySimpleDice.s.sol:DeploySimpleDice --rpc-url $RPC_URL --broadcast'",
+    "deploy:logic": "npx tsx scripts/deploy-game.ts",
+    "setup:network": "npx tsx scripts/setup-network.ts",
+    "recreate:all": "npx tsx scripts/recreate-protocol.ts",
     "contracts:block": "bash -c 'set -a && source .env && set +a && /home/darthgawd/.config/.foundry/bin/cast block-number --rpc-url $RPC_URL'"
   },
   "keywords": [],
@@ -34,5 +42,8 @@
     "tsx": "^4.21.0",
     "turbo": "^2.8.10",
     "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.97.0"
   }
 }

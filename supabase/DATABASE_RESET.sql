@@ -1,5 +1,5 @@
 -- ==========================================
--- BotByte: THE NUCLEAR DATABASE RESET
+-- Falken: THE NUCLEAR DATABASE RESET
 -- Run this in your Supabase SQL Editor to
 -- wipe all data and start from Match #1.
 -- ==========================================

@@ -1,5 +1,5 @@
 -- ==========================================
--- BotByte: SUPABASE MASTER CLEAN SLATE
+-- Falken: SUPABASE MASTER CLEAN SLATE
 -- Run this in your Supabase SQL Editor to
 -- fix schema, replication, RLS, and sync.
 -- ==========================================

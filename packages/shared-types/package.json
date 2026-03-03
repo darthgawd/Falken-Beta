@@ -1,5 +1,5 @@
 {
-  "name": "shared-types",
+  "name": "@falken/shared-types",
   "version": "1.0.0",
   "description": "",
   "type": "module",

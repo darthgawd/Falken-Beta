@@ -6,7 +6,7 @@
   "main": "dist/index.js",
   "scripts": {
     "build": "tsc",
-    "start": "node dist/index.js",
+    "start": "node dist/run.js",
     "dev": "tsx watch src/index.ts"
   },
   "keywords": [],
@@ -17,7 +17,7 @@
     "@supabase/supabase-js": "^2.97.0",
     "dotenv": "^17.3.1",
     "pino": "^10.3.1",
-    "shared-types": "workspace:*",
+    "@falken/shared-types": "workspace:*",
     "viem": "^2.46.2"
   },
   "devDependencies": {

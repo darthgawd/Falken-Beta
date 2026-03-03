@@ -1,24 +1,32 @@
 @import "tailwindcss";
+@plugin "@tailwindcss/typography";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --color-gold: #D4AF37;
+  --color-whitesmoke: #F5F5F5;
+  --font-mono: var(--font-dm-mono), monospace;
+  --font-arena: var(--font-dm-mono), monospace;
+}
 
 :root {
+  --background: #f5f5f7; /* deeper soft off-white */
+  --foreground: #27272a; /* muted zinc-800 */
+  --pattern-color: rgba(59, 130, 246, 0.03);
+}
+
+.dark {
   --background: #000000;
   --foreground: #ffffff;
+  --pattern-color: rgba(39, 39, 42, 0.30);
 }
 
 body {
   color: var(--foreground);
-  background-color: #000000;
+  background-color: var(--background);
   font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
-  
-  /* True Dark Chessboard Effect */
-  background-image: 
-    linear-gradient(45deg, rgba(39, 39, 42, 0.15) 25%, transparent 25%), 
-    linear-gradient(-45deg, rgba(39, 39, 42, 0.15) 25%, transparent 25%), 
-    linear-gradient(45deg, transparent 75%, rgba(39, 39, 42, 0.15) 75%), 
-    linear-gradient(-45deg, transparent 75%, rgba(39, 39, 42, 0.15) 75%);
-  background-size: 80px 80px;
-  background-position: 0 0, 0 40px, 40px -40px, -40px 0px;
-  background-attachment: fixed;
+  transition: background-color 0.3s ease, color 0.3s ease;
 }
 
 @layer base {
@@ -34,4 +42,101 @@ body {
 
 #privy-modal > div {
   z-index: 100000 !important;
+}
+
+@keyframes marquee {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+
+.animate-marquee {
+  animation: marquee 20s linear infinite;
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Custom Styled Scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #000000;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #18181b; /* Zinc-900 */
+  border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #27272a; /* Zinc-800 */
+}
+
+/* Firefox Support */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #18181b #000000;
+}
+
+@keyframes flicker {
+  0% { opacity: 0.99; }
+  10% { opacity: 0.95; }
+  20% { opacity: 0.99; }
+  30% { opacity: 0.92; }
+  40% { opacity: 0.99; }
+  50% { opacity: 0.96; }
+  60% { opacity: 0.99; }
+  70% { opacity: 0.93; }
+  80% { opacity: 0.99; }
+  90% { opacity: 0.97; }
+  100% { opacity: 0.99; }
+}
+
+@keyframes textGlow {
+  0% { text-shadow: 0 0 2px rgba(255,255,255,0.3); }
+  50% { text-shadow: 0 0 10px rgba(59,130,246,0.8), 0 0 20px rgba(59,130,246,0.4); }
+  100% { text-shadow: 0 0 2px rgba(255,255,255,0.3); }
+}
+
+@keyframes blueGlow {
+  0% { box-shadow: 0 0 10px rgba(37,99,235,0.3), inset 0 0 10px rgba(37,99,235,0.1); }
+  50% { box-shadow: 0 0 30px rgba(37,99,235,0.6), inset 0 0 20px rgba(37,99,235,0.2); }
+  100% { box-shadow: 0 0 10px rgba(37,99,235,0.3), inset 0 0 10px rgba(37,99,235,0.1); }
+}
+
+.crt-flicker {
+  animation: flicker 0.1s infinite;
+}
+
+.crt-text-glow {
+  animation: textGlow 1.5s ease-in-out infinite;
+}
+
+.crt-blue-glow {
+  animation: blueGlow 2s ease-in-out infinite;
+  border-color: rgba(37, 99, 235, 0.5) !important;
+}
+
+.crt-scanlines {
+  background: linear-gradient(
+    rgba(18, 16, 16, 0) 50%,
+    rgba(0, 0, 0, 0.2) 50%
+  ),
+  linear-gradient(
+    90deg,
+    rgba(255, 0, 0, 0.05),
+    rgba(0, 255, 0, 0.02),
+    rgba(0, 0, 255, 0.05)
+  );
+  background-size: 100% 4px, 3px 100%;
+  pointer-events: none;
 }

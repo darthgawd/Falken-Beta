@@ -19,7 +19,7 @@
     "ethers": "^6.16.0",
     "pino": "^10.3.1",
     "reference-agent": "workspace:*",
-    "shared-types": "workspace:*"
+    "@falken/shared-types": "workspace:*"
   },
   "devDependencies": {
     "pino-pretty": "^13.1.3"

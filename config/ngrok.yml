@@ -2,7 +2,7 @@ version: "2"
 authtoken: YOUR_AUTHTOKEN_HERE
 
 tunnels:
-  botbyte-arena:
+  falken-arena:
     proto: http
     addr: 3001
     schemes:

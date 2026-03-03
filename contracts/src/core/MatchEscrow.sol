@@ -1,14 +1,21 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity 0.8.24;
 
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/utils/Pausable.sol";
 import "../interfaces/IGameLogic.sol";
+import "../interfaces/IPriceProvider.sol";
 
+/**
+ * @title MatchEscrow
+ * @dev Hardened escrow for adversarial game theory matches on Base.
+ * Implements Commit/Reveal scheme and secure ETH management.
+ */
 contract MatchEscrow is ReentrancyGuard, Ownable, Pausable {
+    
     enum MatchStatus { OPEN, ACTIVE, SETTLED, VOIDED }
-    enum Phase       { COMMIT, REVEAL }
+    enum Phase { COMMIT, REVEAL }
 
     struct Match {
         address  playerA;
@@ -18,6 +25,7 @@ contract MatchEscrow is ReentrancyGuard, Ownable, Pausable {
         uint8    winsA;
         uint8    winsB;
         uint8    currentRound;
+        uint8    drawCounter;     // Limits Sudden Death loops
         Phase    phase;
         MatchStatus status;
         uint256  commitDeadline;
@@ -26,281 +34,283 @@ contract MatchEscrow is ReentrancyGuard, Ownable, Pausable {
 
     struct RoundCommit {
         bytes32  commitHash;
-        uint8    move;            // 0=unset, 1=Rock, 2=Paper, 3=Scissors (standardized by logic)
+        uint8    move;            // 0=unset, 1=Rock, 2=Paper, 3=Scissors
         bytes32  salt;
         bool     revealed;
     }
 
     uint256 public matchCounter;
-    uint256 public rakeBps = 500; // 5%
+    uint256 public constant RAKE_BPS = 500; // 5%
     address public treasury;
+    IPriceProvider public immutable priceProvider;
 
     mapping(uint256 => Match) public matches;
-    // matchId => roundNumber => playerAddress => RoundCommit
     mapping(uint256 => mapping(uint8 => mapping(address => RoundCommit))) public roundCommits;
-    // Pull-payment ledger: tracks ETH owed to recipients when a push transfer fails
     mapping(address => uint256) public pendingWithdrawals;
-    // FIX #9: Whitelist of game logic contracts approved by the owner
     mapping(address => bool) public approvedGameLogic;
 
-    event MatchCreated(uint256 indexed matchId, address indexed playerA, uint256 stake, address gameLogic);
-    event MatchJoined(uint256 indexed matchId, address indexed playerB);
-    event RoundStarted(uint256 indexed matchId, uint8 roundNumber);
-    event MoveCommitted(uint256 indexed matchId, uint8 roundNumber, address indexed player);
-    event MoveRevealed(uint256 indexed matchId, uint8 roundNumber, address indexed player, uint8 move);
-    event RoundResolved(uint256 indexed matchId, uint8 roundNumber, uint8 winner);
-    event MatchSettled(uint256 indexed matchId, address indexed winner, uint256 payout);
-    event TimeoutClaimed(uint256 indexed matchId, uint8 roundNumber, address indexed claimer);
-    // Emitted when a push transfer fails and the amount is queued for pull withdrawal
-    event WithdrawalQueued(address indexed recipient, uint256 amount);
-    event GameLogicApproved(address indexed logic, bool approved);
+    // Timeouts
+    uint256 public constant COMMIT_WINDOW = 30 minutes;
+    uint256 public constant REVEAL_WINDOW = 30 minutes;
+    uint8 public constant MAX_ROUNDS = 5;
 
-    uint256 public constant TIMEOUT_DURATION = 1 hours;
+    event MatchCreated(uint256 indexed matchId, address indexed creator, uint256 stake, address gameLogic);
+    event MatchJoined(uint256 indexed matchId, address indexed rival);
+    event MoveCommitted(uint256 indexed matchId, uint8 round, address indexed player);
+    event MoveRevealed(uint256 indexed matchId, uint8 round, address indexed player, uint8 move);
+    event RoundResolved(uint256 indexed matchId, uint8 round, uint8 result);
+    event MatchSettled(uint256 indexed matchId, address winner, uint256 payout);
+    event MatchVoided(uint256 indexed matchId, string reason);
+    event WithdrawalQueued(address indexed user, uint256 amount);
+    event PriceUpdated(uint256 newMinStake);
 
-    constructor(address _treasury) Ownable(msg.sender) {
-        require(_treasury != address(0), "Invalid treasury");
-        treasury = _treasury;
+    constructor(address initialTreasury, address initialPriceProvider) Ownable(msg.sender) {
+        require(initialTreasury != address(0), "Invalid treasury");
+        require(initialPriceProvider != address(0), "Invalid price provider");
+        treasury = initialTreasury;
+        priceProvider = IPriceProvider(initialPriceProvider);
     }
 
-    function createMatch(uint256 _stake, address _gameLogic) external payable nonReentrant whenNotPaused {
-        require(_stake > 0, "Stake must be non-zero");
-        require(msg.value == _stake, "Incorrect stake amount");
-        // FIX #9: Only allow whitelisted game logic contracts
-        require(approvedGameLogic[_gameLogic], "Game logic not approved");
+    /**
+     * @dev Creates a match with specific ETH stake.
+     */
+    function createMatch(uint256 stake, address gameLogic) external payable nonReentrant whenNotPaused {
+        require(msg.value == stake, "Incorrect stake amount");
+        require(approvedGameLogic[gameLogic], "Game logic not approved");
+
+        uint256 usdValue = priceProvider.getUsdValue(stake);
+        require(usdValue >= priceProvider.getMinStakeUsd(), "Stake below minimum");
 
         uint256 matchId = ++matchCounter;
-
         matches[matchId] = Match({
             playerA: msg.sender,
             playerB: address(0),
-            stake: _stake,
-            gameLogic: _gameLogic,
+            stake: stake,
+            gameLogic: gameLogic,
             winsA: 0,
             winsB: 0,
             currentRound: 1,
+            drawCounter: 0,
             phase: Phase.COMMIT,
             status: MatchStatus.OPEN,
             commitDeadline: 0,
             revealDeadline: 0
         });
 
-        emit MatchCreated(matchId, msg.sender, _stake, _gameLogic);
+        emit MatchCreated(matchId, msg.sender, stake, gameLogic);
     }
 
     /**
-     * @notice Allows playerA to cancel an unfilled match and withdraw stake.
+     * @dev Creates a match by specifying a USD amount (18 decimals).
+     * Contract converts USD to required ETH.
      */
-    function cancelMatch(uint256 _matchId) external nonReentrant {
-        Match storage m = matches[_matchId];
-        require(m.status == MatchStatus.OPEN, "Match not open");
-        require(msg.sender == m.playerA, "Not match creator");
+    function createMatchUSD(uint256 usdAmount, address gameLogic) external payable nonReentrant whenNotPaused {
+        require(approvedGameLogic[gameLogic], "Game logic not approved");
+        
+        uint256 requiredEth = priceProvider.getEthAmount(usdAmount);
+        require(msg.value >= requiredEth, "Insufficient ETH for USD stake");
+        require(requiredEth > 0, "Stake must be > 0");
 
-        m.status = MatchStatus.VOIDED;
-        _safeTransfer(m.playerA, m.stake);
+        uint256 usdValue = priceProvider.getUsdValue(requiredEth);
+        require(usdValue >= priceProvider.getMinStakeUsd(), "Stake below minimum");
 
-        emit MatchSettled(_matchId, address(0), 0);
+        uint256 matchId = ++matchCounter;
+        matches[matchId] = Match({
+            playerA: msg.sender,
+            playerB: address(0),
+            stake: requiredEth,
+            gameLogic: gameLogic,
+            winsA: 0,
+            winsB: 0,
+            currentRound: 1,
+            drawCounter: 0,
+            phase: Phase.COMMIT,
+            status: MatchStatus.OPEN,
+            commitDeadline: 0,
+            revealDeadline: 0
+        });
+
+        emit MatchCreated(matchId, msg.sender, requiredEth, gameLogic);
+
+        // Refund excess ETH
+        if (msg.value > requiredEth) {
+            _safeTransfer(msg.sender, msg.value - requiredEth);
+        }
     }
 
-    function joinMatch(uint256 _matchId) external payable nonReentrant whenNotPaused {
-        Match storage m = matches[_matchId];
+    /**
+     * @dev Joins an open match.
+     */
+    function joinMatch(uint256 matchId) external payable nonReentrant whenNotPaused {
+        Match storage m = matches[matchId];
         require(m.status == MatchStatus.OPEN, "Match not open");
         require(msg.value == m.stake, "Incorrect stake amount");
         require(msg.sender != m.playerA, "Cannot play against yourself");
 
         m.playerB = msg.sender;
         m.status = MatchStatus.ACTIVE;
-        m.commitDeadline = block.timestamp + TIMEOUT_DURATION;
+        m.commitDeadline = block.timestamp + COMMIT_WINDOW;
 
-        emit MatchJoined(_matchId, msg.sender);
-        emit RoundStarted(_matchId, m.currentRound);
-    }
-
-    function commitMove(uint256 _matchId, bytes32 _commitHash) external nonReentrant {
-        Match storage m = matches[_matchId];
-        require(m.status == MatchStatus.ACTIVE, "Match not active");
-        require(m.phase == Phase.COMMIT, "Not in commit phase");
-        // FIX #1: Enforce deadline so players cannot commit after expiry to front-run timeout claims
-        require(block.timestamp <= m.commitDeadline, "Commit deadline passed");
-        require(msg.sender == m.playerA || msg.sender == m.playerB, "Not a participant");
-
-        RoundCommit storage rc = roundCommits[_matchId][m.currentRound][msg.sender];
-        require(rc.commitHash == bytes32(0), "Already committed");
-
-        rc.commitHash = _commitHash;
-
-        emit MoveCommitted(_matchId, m.currentRound, msg.sender);
-
-        // If both committed, move to reveal phase
-        if (roundCommits[_matchId][m.currentRound][m.playerA].commitHash != bytes32(0) &&
-            roundCommits[_matchId][m.currentRound][m.playerB].commitHash != bytes32(0)) {
-            m.phase = Phase.REVEAL;
-            m.revealDeadline = block.timestamp + TIMEOUT_DURATION;
-        }
-    }
-
-    function revealMove(uint256 _matchId, uint8 _move, bytes32 _salt) external nonReentrant {
-        Match storage m = matches[_matchId];
-        require(m.status == MatchStatus.ACTIVE, "Match not active");
-        require(m.phase == Phase.REVEAL, "Not in reveal phase");
-        // FIX #2: Enforce deadline so players cannot reveal after expiry to front-run timeout claims
-        require(block.timestamp <= m.revealDeadline, "Reveal deadline passed");
-        require(msg.sender == m.playerA || msg.sender == m.playerB, "Not a participant");
-
-        RoundCommit storage rc = roundCommits[_matchId][m.currentRound][msg.sender];
-        require(!rc.revealed, "Already revealed");
-
-        bytes32 expectedHash = keccak256(abi.encodePacked(_matchId, m.currentRound, msg.sender, _move, _salt));
-        require(rc.commitHash == expectedHash, "Invalid reveal");
-        // FIX #8: Validate move against game logic before accepting — prevents resolveRound revert on bad moves
-        require(IGameLogic(m.gameLogic).isValidMove(_move), "Invalid move");
-
-        rc.move = _move;
-        rc.salt = _salt;
-        rc.revealed = true;
-
-        emit MoveRevealed(_matchId, m.currentRound, msg.sender, _move);
-
-        // If both revealed, resolve round
-        if (roundCommits[_matchId][m.currentRound][m.playerA].revealed &&
-            roundCommits[_matchId][m.currentRound][m.playerB].revealed) {
-            _resolveRound(_matchId);
-        }
-    }
-
-    function _resolveRound(uint256 _matchId) internal {
-        Match storage m = matches[_matchId];
-        IGameLogic logic = IGameLogic(m.gameLogic);
-
-        uint8 winner = logic.resolveRound(
-            roundCommits[_matchId][m.currentRound][m.playerA].move,
-            roundCommits[_matchId][m.currentRound][m.playerB].move
-        );
-
-        if (winner == 1) {
-            m.winsA++;
-        } else if (winner == 2) {
-            m.winsB++;
-        }
-        // winner == 0 is a draw, no wins awarded
-
-        emit RoundResolved(_matchId, m.currentRound, winner);
-
-        // Check for match end (Best of 3)
-        if (m.winsA == 2 || m.winsB == 2 || m.currentRound >= 5) {
-            _settleMatch(_matchId);
-        } else {
-            m.currentRound++;
-            m.phase = Phase.COMMIT;
-            m.commitDeadline = block.timestamp + TIMEOUT_DURATION;
-            emit RoundStarted(_matchId, m.currentRound);
-        }
-    }
-
-    function claimTimeout(uint256 _matchId) external nonReentrant {
-        Match storage m = matches[_matchId];
-        require(m.status == MatchStatus.ACTIVE, "Match not active");
-
-        address opponent;
-        if (msg.sender == m.playerA) {
-            opponent = m.playerB;
-        } else if (msg.sender == m.playerB) {
-            opponent = m.playerA;
-        } else {
-            revert("Not a participant");
-        }
-
-        if (m.phase == Phase.COMMIT) {
-            require(block.timestamp > m.commitDeadline, "Deadline not passed");
-            require(roundCommits[_matchId][m.currentRound][msg.sender].commitHash != bytes32(0), "You did not commit");
-            require(roundCommits[_matchId][m.currentRound][opponent].commitHash == bytes32(0), "Opponent committed");
-        } else {
-            require(block.timestamp > m.revealDeadline, "Deadline not passed");
-            require(roundCommits[_matchId][m.currentRound][msg.sender].revealed, "You did not reveal");
-            require(!roundCommits[_matchId][m.currentRound][opponent].revealed, "Opponent revealed");
-        }
-
-        emit TimeoutClaimed(_matchId, m.currentRound, msg.sender);
-
-        // Timeout results in Match Forfeit; _settleMatch sets SETTLED status
-        if (msg.sender == m.playerA) {
-            m.winsA = 2; // Forfeit win
-        } else {
-            m.winsB = 2;
-        }
-        _settleMatch(_matchId);
+        emit MatchJoined(matchId, msg.sender);
     }
 
     /**
-     * @notice Allows anyone to void a match if BOTH players miss a deadline.
-     * @dev Charges a small 1% rake to discourage fee evasion.
+     * @dev Commits a hashed move.
      */
-    function mutualTimeout(uint256 _matchId) external nonReentrant {
-        Match storage m = matches[_matchId];
+    function commitMove(uint256 matchId, bytes32 commitHash) external nonReentrant whenNotPaused {
+        Match storage m = matches[matchId];
         require(m.status == MatchStatus.ACTIVE, "Match not active");
+        require(m.phase == Phase.COMMIT, "Not in commit phase");
+        require(block.timestamp <= m.commitDeadline, "Commit deadline passed");
+        require(msg.sender == m.playerA || msg.sender == m.playerB, "Not a participant");
+        require(roundCommits[matchId][m.currentRound][msg.sender].commitHash == bytes32(0), "Already committed");
 
-        bool bothFailedCommit = m.phase == Phase.COMMIT &&
-            block.timestamp > m.commitDeadline &&
-            roundCommits[_matchId][m.currentRound][m.playerA].commitHash == bytes32(0) &&
-            roundCommits[_matchId][m.currentRound][m.playerB].commitHash == bytes32(0);
+        roundCommits[matchId][m.currentRound][msg.sender].commitHash = commitHash;
+        emit MoveCommitted(matchId, m.currentRound, msg.sender);
 
-        bool bothFailedReveal = m.phase == Phase.REVEAL &&
-            block.timestamp > m.revealDeadline &&
-            !roundCommits[_matchId][m.currentRound][m.playerA].revealed &&
-            !roundCommits[_matchId][m.currentRound][m.playerB].revealed;
-
-        require(bothFailedCommit || bothFailedReveal, "Mutual timeout not met");
-
-        m.status = MatchStatus.VOIDED;
-
-        // 1% Liveness Penalty to treasury
-        uint256 penalty = (m.stake * 2 * 100) / 10000;
-        uint256 totalRefund = (m.stake * 2) - penalty;
-        uint256 refundA = totalRefund / 2;
-        uint256 refundB = totalRefund - refundA; // Handles odd-wei remainder
-
-        _safeTransfer(treasury, penalty);
-        _safeTransfer(m.playerA, refundA);
-        _safeTransfer(m.playerB, refundB);
-
-        emit MatchSettled(_matchId, address(0), 0);
+        // If both committed, move to reveal phase
+        if (roundCommits[matchId][m.currentRound][m.playerA].commitHash != bytes32(0) &&
+            roundCommits[matchId][m.currentRound][m.playerB].commitHash != bytes32(0)) {
+            m.phase = Phase.REVEAL;
+            m.revealDeadline = block.timestamp + REVEAL_WINDOW;
+        }
     }
 
-    function _settleMatch(uint256 _matchId) internal {
-        Match storage m = matches[_matchId];
-        m.status = MatchStatus.SETTLED;
+    /**
+     * @dev Reveals a move with the secret salt.
+     */
+    function revealMove(uint256 matchId, uint8 move, bytes32 salt) external nonReentrant whenNotPaused {
+        Match storage m = matches[matchId];
+        require(m.status == MatchStatus.ACTIVE, "Match not active");
+        require(m.phase == Phase.REVEAL, "Not in reveal phase");
+        require(block.timestamp <= m.revealDeadline, "Reveal deadline passed");
+        require(msg.sender == m.playerA || msg.sender == m.playerB, "Not a participant");
+        require(!roundCommits[matchId][m.currentRound][msg.sender].revealed, "Already revealed");
 
-        address winner;
-        if (m.winsA > m.winsB) {
-            winner = m.playerA;
-        } else if (m.winsB > m.winsA) {
-            winner = m.playerB;
-        } else {
-            // Tie - Refund both
-            // FIX #4: Use _safeTransfer so a non-payable contract cannot permanently lose their stake
-            _safeTransfer(m.playerA, m.stake);
-            _safeTransfer(m.playerB, m.stake);
-            emit MatchSettled(_matchId, address(0), m.stake);
+        // Verify Hash: keccak256("FALKEN_V1" + address(this) + matchId + round + sender + move + salt)
+        bytes32 expectedHash = keccak256(abi.encodePacked("FALKEN_V1", address(this), matchId, uint256(m.currentRound), msg.sender, uint256(move), salt));
+        require(expectedHash == roundCommits[matchId][m.currentRound][msg.sender].commitHash, "Invalid hash");
+        
+        // For FISE matches, gameLogic is address(this), so skip isValidMove check
+        // FISE moves are validated by the FalkenVM during resolution
+        if (m.gameLogic != address(this)) {
+            require(IGameLogic(m.gameLogic).isValidMove(move), "Invalid move");
+        }
+
+        roundCommits[matchId][m.currentRound][msg.sender].move = move;
+        roundCommits[matchId][m.currentRound][msg.sender].salt = salt;
+        roundCommits[matchId][m.currentRound][msg.sender].revealed = true;
+
+        emit MoveRevealed(matchId, m.currentRound, msg.sender, move);
+
+        // If both revealed, resolve the round
+        if (roundCommits[matchId][m.currentRound][m.playerA].revealed &&
+            roundCommits[matchId][m.currentRound][m.playerB].revealed) {
+            _resolveRound(matchId);
+        }
+    }
+
+    /**
+     * @dev Internal round resolution logic.
+     */
+    function _resolveRound(uint256 matchId) internal virtual {
+        Match storage m = matches[matchId];
+        uint8 moveA = roundCommits[matchId][m.currentRound][m.playerA].move;
+        uint8 moveB = roundCommits[matchId][m.currentRound][m.playerB].move;
+
+        uint8 result = IGameLogic(m.gameLogic).resolveRound(moveA, moveB);
+        emit RoundResolved(matchId, m.currentRound, result);
+
+        if (result == 1) { // Player A wins round
+            m.winsA++;
+            m.drawCounter = 0;
+        } else if (result == 2) { // Player B wins round
+            m.winsB++;
+            m.drawCounter = 0;
+        } else { // Draw
+            m.drawCounter++;
+        }
+
+        // Cleanup round storage
+        delete roundCommits[matchId][m.currentRound][m.playerA];
+        delete roundCommits[matchId][m.currentRound][m.playerB];
+
+        // Check for match winner
+        uint8 winsReq = IGameLogic(m.gameLogic).winsRequired();
+        if (m.winsA >= winsReq || m.winsB >= winsReq) {
+            _settleMatch(matchId);
             return;
         }
 
-        uint256 totalPot = m.stake * 2;
-        uint256 rake = (totalPot * rakeBps) / 10000;
-        uint256 payout = totalPot - rake;
+        // Handle round progression
+        if (result == 0) {
+            // Draw - check for sudden death limit
+            if (m.drawCounter >= 3) {
+                // Sudden death limit reached
+                if (winsReq == 1) {
+                    // No one can win this match (all draws with winsRequired=1)
+                    _settleMatch(matchId);
+                    return;
+                }
+                // Check if max rounds reached
+                if (m.currentRound >= MAX_ROUNDS) {
+                    _settleMatch(matchId);
+                    return;
+                }
+                // Advance to next round, reset draw counter
+                m.currentRound++;
+                m.drawCounter = 0;
+            }
+            // Else: stay in same round (sudden death continues)
+        } else {
+            // Non-draw result - check max rounds before advancing
+            if (m.currentRound >= MAX_ROUNDS) {
+                _settleMatch(matchId);
+                return;
+            }
+            // Advance to next round
+            m.currentRound++;
+        }
 
-        // Treasury failure REVERTS (Critical for protocol health)
-        (bool successRake, ) = payable(treasury).call{value: rake}("");
-        require(successRake, "Treasury payment failed");
-
-        // FIX #5: Use _safeTransfer so a non-payable winner contract cannot permanently lose their winnings
-        _safeTransfer(winner, payout);
-
-        emit MatchSettled(_matchId, winner, payout);
+        // Continue to next round
+        m.phase = Phase.COMMIT;
+        m.commitDeadline = block.timestamp + COMMIT_WINDOW;
     }
 
-    function setTreasury(address _treasury) external onlyOwner {
-        // FIX #7: Mirror the constructor's zero-address guard so rake cannot be burned
-        require(_treasury != address(0), "Invalid treasury");
-        treasury = _treasury;
+    /**
+     * @dev Settles the match and pays out the winner.
+     */
+    function _settleMatch(uint256 matchId) internal {
+        Match storage m = matches[matchId];
+        require(m.status == MatchStatus.ACTIVE, "Match not active");
+
+        m.status = MatchStatus.SETTLED;
+        uint256 totalPot = m.stake * 2;
+
+        if (m.winsA == m.winsB) {
+            // True Draw (refund both)
+            _safeTransfer(m.playerA, m.stake);
+            _safeTransfer(m.playerB, m.stake);
+            emit MatchSettled(matchId, address(0), m.stake);
+        } else {
+            address winner = m.winsA > m.winsB ? m.playerA : m.playerB;
+            uint256 rake = (totalPot * RAKE_BPS) / 10000;
+            uint256 payout = totalPot - rake;
+
+            _safeTransfer(treasury, rake);
+            _safeTransfer(winner, payout);
+            emit MatchSettled(matchId, winner, payout);
+        }
+    }
+
+    function setTreasury(address newTreasury) external onlyOwner {
+        require(newTreasury != address(0), "Invalid treasury");
+        treasury = newTreasury;
+    }
+
+    function approveGameLogic(address logic, bool approved) external onlyOwner {
+        require(logic != address(0), "Invalid logic address");
+        approvedGameLogic[logic] = approved;
     }
 
     function pause() external onlyOwner {
@@ -311,75 +321,132 @@ contract MatchEscrow is ReentrancyGuard, Ownable, Pausable {
         _unpause();
     }
 
-    /**
-     * @notice Add or remove a game logic contract from the approved whitelist.
-     * @dev FIX #9: Prevents matches from being created with malicious or unverified game logic.
-     */
-    function approveGameLogic(address _logic, bool _approved) external onlyOwner {
-        require(_logic != address(0), "Invalid logic address");
-        approvedGameLogic[_logic] = _approved;
-        emit GameLogicApproved(_logic, _approved);
-    }
-
-    /**
-     * @notice Returns the full state of a match.
-     */
-    function getMatch(uint256 _matchId) external view returns (Match memory) {
-        return matches[_matchId];
-    }
-
-    /**
-     * @notice Returns the commit/reveal status for a player in a round.
-     */
-    function getRoundStatus(uint256 _matchId, uint8 _round, address _player) external view returns (bytes32 commitHash, bool revealed) {
-        RoundCommit storage rc = roundCommits[_matchId][_round][_player];
-        return (rc.commitHash, rc.revealed);
-    }
-
-    /**
-     * @notice Emergency function to void a match and refund both players.
-     * @param _matchId The ID of the match to void.
-     */
-    function adminVoidMatch(uint256 _matchId) external onlyOwner nonReentrant {
-        Match storage m = matches[_matchId];
-        require(m.status == MatchStatus.OPEN || m.status == MatchStatus.ACTIVE, "Match not voidable");
-
-        m.status = MatchStatus.VOIDED;
-
-        // FIX #6: Use _safeTransfer so a failed refund cannot silently strand funds with no recovery path
-        if (m.playerA != address(0)) {
-            _safeTransfer(m.playerA, m.stake);
-        }
-        if (m.playerB != address(0)) {
-            _safeTransfer(m.playerB, m.stake);
-        }
-
-        emit MatchSettled(_matchId, address(0), 0);
-    }
-
-    /**
-     * @notice Pull-payment withdrawal for recipients whose push transfer failed.
-     * @dev Funds are queued here by _safeTransfer when a push to a contract address fails.
-     */
     function withdraw() external nonReentrant {
         uint256 amount = pendingWithdrawals[msg.sender];
         require(amount > 0, "Nothing to withdraw");
+        
+        // CEI: Update before call
         pendingWithdrawals[msg.sender] = 0;
-        (bool success, ) = payable(msg.sender).call{value: amount}("");
-        require(success, "Withdrawal failed");
+        
+        (bool success, ) = address(msg.sender).call{value: amount}("");
+        require(success, "Withdraw failed");
     }
 
-    /**
-     * @dev Attempts to push ETH to `to`. If the push fails (e.g. recipient is a
-     *      non-payable contract), the amount is recorded in pendingWithdrawals so
-     *      the recipient can pull it later via withdraw(). Funds are NEVER lost.
-     */
     function _safeTransfer(address to, uint256 amount) internal {
-        if (amount == 0) return;
-        (bool success, ) = payable(to).call{value: amount}("");
+        if (amount == 0 || to == address(0)) return;
+        
+        // Attempt direct transfer
+        (bool success, ) = address(to).call{value: amount}("");
+        
         if (!success) {
+            // Fallback to IOU system
             pendingWithdrawals[to] += amount;
             emit WithdrawalQueued(to, amount);
         }
     }
+
+    function adminVoidMatch(uint256 matchId) external onlyOwner {
+        Match storage m = matches[matchId];
+        require(m.status == MatchStatus.OPEN || m.status == MatchStatus.ACTIVE, "Match not active");
+        
+        m.status = MatchStatus.VOIDED;
+        _safeTransfer(m.playerA, m.stake);
+        if (m.playerB != address(0)) {
+            _safeTransfer(m.playerB, m.stake);
+        }
+        emit MatchVoided(matchId, "Admin intervention");
+    }
+
+    /**
+     * @dev Allows player A to cancel an open match before anyone joins.
+     */
+    function cancelMatch(uint256 matchId) external nonReentrant {
+        Match storage m = matches[matchId];
+        require(m.status == MatchStatus.OPEN, "Match not open");
+        require(msg.sender == m.playerA, "Not match creator");
+
+        m.status = MatchStatus.VOIDED;
+        _safeTransfer(m.playerA, m.stake);
+
+        emit MatchVoided(matchId, "Cancelled by creator");
+    }
+
+    /**
+     * @dev Allows a player to claim a win if opponent times out.
+     */
+    function claimTimeout(uint256 matchId) external nonReentrant {
+        Match storage m = matches[matchId];
+        require(m.status == MatchStatus.ACTIVE, "Match not active");
+        require(msg.sender == m.playerA || msg.sender == m.playerB, "Not a participant");
+
+        address opponent = (msg.sender == m.playerA) ? m.playerB : m.playerA;
+
+        if (m.phase == Phase.COMMIT) {
+            require(block.timestamp > m.commitDeadline, "Deadline not passed");
+            require(roundCommits[matchId][m.currentRound][msg.sender].commitHash != bytes32(0), "You did not commit");
+            require(roundCommits[matchId][m.currentRound][opponent].commitHash == bytes32(0), "Opponent committed");
+        } else {
+            require(block.timestamp > m.revealDeadline, "Deadline not passed");
+            require(roundCommits[matchId][m.currentRound][msg.sender].revealed, "You did not reveal");
+            require(!roundCommits[matchId][m.currentRound][opponent].revealed, "Opponent revealed");
+        }
+
+        // Award 3 wins to claimer to trigger settlement
+        if (msg.sender == m.playerA) {
+            m.winsA = 3;
+        } else {
+            m.winsB = 3;
+        }
+        
+        _settleMatch(matchId);
+    }
+
+    /**
+     * @dev Allows voiding a match if both players fail to move (mutual timeout).
+     */
+    function mutualTimeout(uint256 matchId) external nonReentrant {
+        Match storage m = matches[matchId];
+        require(m.status == MatchStatus.ACTIVE, "Match not active");
+
+        if (m.phase == Phase.COMMIT) {
+            require(block.timestamp > m.commitDeadline, "Deadline not passed");
+            require(roundCommits[matchId][m.currentRound][m.playerA].commitHash == bytes32(0) &&
+                    roundCommits[matchId][m.currentRound][m.playerB].commitHash == bytes32(0), "Mutual timeout not met");
+        } else {
+            require(block.timestamp > m.revealDeadline, "Deadline not passed");
+            require(!roundCommits[matchId][m.currentRound][m.playerA].revealed &&
+                    !roundCommits[matchId][m.currentRound][m.playerB].revealed, "Mutual timeout not met");
+        }
+
+        m.status = MatchStatus.VOIDED;
+        
+        // Apply small penalty for mutual timeout (1% total, split between treasury and both players)
+        uint256 penalty = (m.stake * 2 * 100) / 10000; // 1% of total pot
+        uint256 totalRefund = (m.stake * 2) - penalty;
+        uint256 refundA = totalRefund / 2;
+        uint256 refundB = totalRefund - refundA;
+
+        _safeTransfer(treasury, penalty);
+        _safeTransfer(m.playerA, refundA);
+        _safeTransfer(m.playerB, refundB);
+
+        emit MatchVoided(matchId, "Mutual timeout");
+    }
+
+    /**
+     * @dev Returns the round commit status for a player.
+     */
+    function getRoundStatus(uint256 matchId, uint8 round, address player) external view returns (bytes32 commitHash, bool revealed) {
+        RoundCommit storage rc = roundCommits[matchId][round][player];
+        return (rc.commitHash, rc.revealed);
+    }
+
+    /**
+     * @dev Returns full match data.
+     */
+    function getMatch(uint256 matchId) external view returns (Match memory) {
+        return matches[matchId];
+    }
+
+    receive() external payable {}
 }
