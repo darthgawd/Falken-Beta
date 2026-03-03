@@ -8,11 +8,12 @@ import { StatsGrid } from '@/components/StatsGrid';
 import { Leaderboard } from '@/components/Leaderboard';
 import { MatchFeed } from '@/components/MatchFeed';
 import { Terminal } from '@/components/Terminal';
+import { HostedAgentStats } from '@/components/HostedAgentStats';
 import { Terminal as TerminalIcon, Swords, Activity, Zap, ShieldCheck, ChevronDown } from 'lucide-react';
 
 export default function ArenaPage() {
   const { authenticated, login } = usePrivy();
-  const [activeTab, setActiveTab] = useState<'terminal' | 'arena'>('terminal');
+  const [activeTab, setActiveTab] = useState<'terminal' | 'arena'>('arena');
   const [expandedModule, setExpandedModule] = useState<'rankings' | 'registry' | 'telemetry' | null>('rankings');
 
   return (
@@ -38,17 +39,17 @@ export default function ArenaPage() {
       {/* Main Command Center Grid */}
       <div className="flex-1 min-h-0 grid grid-cols-1 lg:grid-cols-12 gap-4">
         
-        {/* Left Column: Multi-Module Lens [3 Cols] */}
+        {/* Left Column: Intel Lens [3 Cols] */}
         <div className="lg:col-span-3 flex flex-col gap-4 min-h-0">
           
-          {/* Module: Leaderboard (The Blue Zone) */}
-          <div className={`flex flex-col border transition-all duration-500 rounded-xl overflow-hidden bg-blue-600/[0.05] dark:bg-blue-600/[0.08] ${expandedModule === 'rankings' ? 'flex-[2] border-blue-600/30 dark:border-blue-500/30 shadow-sm dark:shadow-[0_0_50px_rgba(37,99,235,0.15)]' : 'flex-none h-14 border-zinc-200 dark:border-zinc-900'}`}>
+          {/* Module: Leaderboard */}
+          <div className={`flex flex-col border transition-all duration-500 rounded-xl overflow-hidden bg-blue-600/[0.05] dark:bg-blue-600/[0.08] ${expandedModule === 'rankings' ? 'flex-[2]' : 'flex-none h-14'} border-zinc-200 dark:border-zinc-900`}>
             <button 
               onClick={() => setExpandedModule(expandedModule === 'rankings' ? null : 'rankings')}
-              className={`flex-none px-4 py-5 border-b transition-colors flex items-center justify-between group ${expandedModule === 'rankings' ? 'bg-blue-600/20 dark:bg-blue-600/20 border-blue-600/30 dark:border-blue-500/30' : 'bg-blue-600/10 dark:bg-blue-900/20 border-blue-600/20 dark:border-blue-900'}`}
+              className="flex-none px-4 py-5 border-b border-zinc-200 dark:border-zinc-900 transition-colors flex items-center justify-between bg-blue-600/10 dark:bg-blue-900/20"
             >
               <div className="flex items-center gap-3">
-                <ShieldCheck className={`w-5 h-5 transition-colors ${expandedModule === 'rankings' ? 'text-blue-600 dark:text-blue-400' : 'text-zinc-400'}`} />
+                <ShieldCheck className="w-5 h-5 text-blue-600 dark:text-blue-400" />
                 <span className="text-base font-arena font-black uppercase tracking-[0.3em] text-zinc-900 dark:text-white">Leaderboard</span>
               </div>
               <ChevronDown className={`w-5 h-5 text-zinc-500 transition-transform duration-300 ${expandedModule === 'rankings' ? 'rotate-180' : ''}`} />
@@ -58,124 +59,134 @@ export default function ArenaPage() {
             </div>
           </div>
 
-          {/* Module: Falk Stats (The Green Zone) */}
-          <div className={`flex flex-col border transition-all duration-500 rounded-xl overflow-hidden bg-emerald-600/[0.05] dark:bg-emerald-600/[0.08] ${expandedModule === 'telemetry' ? 'flex-[2] border-emerald-600/30 dark:border-emerald-500/30 shadow-sm dark:shadow-[0_0_50px_rgba(16,185,129,0.15)]' : 'flex-none h-14 border-zinc-200 dark:border-zinc-900'}`}>
+          {/* Module: Falk Stats */}
+          <div className={`flex flex-col border transition-all duration-500 rounded-xl overflow-hidden bg-emerald-600/[0.05] dark:bg-emerald-600/[0.08] ${expandedModule === 'telemetry' ? 'flex-[2]' : 'flex-none h-14'} border-zinc-200 dark:border-zinc-900`}>
             <button 
               onClick={() => setExpandedModule(expandedModule === 'telemetry' ? null : 'telemetry')}
-              className={`flex-none px-4 py-5 border-b transition-colors flex items-center justify-between group ${expandedModule === 'telemetry' ? 'bg-emerald-600/20 dark:bg-emerald-600/20 border-emerald-600/30 dark:border-emerald-500/30' : 'bg-emerald-600/10 dark:bg-emerald-900/20 border-emerald-600/20 dark:border-zinc-900'}`}
+              className="flex-none px-4 py-5 border-b border-zinc-200 dark:border-zinc-900 transition-colors flex items-center justify-between bg-emerald-600/10 dark:bg-emerald-900/20"
             >
               <div className="flex items-center gap-3">
-                <Activity className={`w-5 h-5 transition-colors ${expandedModule === 'telemetry' ? 'text-emerald-600 dark:text-emerald-400' : 'text-zinc-400'}`} />
+                <Activity className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
                 <span className="text-base font-arena font-black uppercase tracking-[0.3em] text-zinc-900 dark:text-white">Falk Stats</span>
               </div>
               <ChevronDown className={`w-5 h-5 text-zinc-500 transition-transform duration-300 ${expandedModule === 'telemetry' ? 'rotate-180' : ''}`} />
             </button>
             <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
               <StatsGrid />
-              <div className="mt-4 p-4 border border-zinc-200 dark:border-zinc-900 bg-zinc-50 dark:bg-zinc-900/10 rounded-xl space-y-4">
-                <div className="flex items-center justify-between">
-                  <span className="text-[9px] font-black text-zinc-400 dark:text-zinc-600 uppercase tracking-widest">Protocol_Link</span>
-                  <div className="px-2 py-0.5 rounded bg-emerald-600/5 dark:bg-emerald-500/10 border border-emerald-600/10 dark:border-emerald-500/20 text-[8px] font-bold text-emerald-600 dark:text-emerald-500 uppercase">Secure</div>
-                </div>
-                <div className="space-y-2">
-                  <div className="flex justify-between text-[10px]">
-                    <span className="text-zinc-400 dark:text-zinc-500 uppercase tracking-tighter">Network</span>
-                    <span className="text-zinc-900 dark:text-zinc-200 font-bold tracking-tight">BASE_SEPOLIA</span>
-                  </div>
-                  <div className="flex justify-between text-[10px]">
-                    <span className="text-zinc-400 dark:text-zinc-500 uppercase tracking-tighter">Sync_Status</span>
-                    <span className="text-emerald-600 dark:text-emerald-500 font-bold tracking-tight uppercase">Optimal</span>
-                  </div>
-                </div>
-              </div>
             </div>
           </div>
 
-          {/* Module: App Store (The Purple Zone) */}
-          <div className={`flex flex-col border transition-all duration-500 rounded-xl overflow-hidden bg-purple-600/[0.05] dark:bg-purple-600/[0.08] ${expandedModule === 'registry' ? 'flex-[2] border-purple-600/30 dark:border-purple-500/30 shadow-sm dark:shadow-[0_0_50px_rgba(168,85,247,0.15)]' : 'flex-none h-14 border-purple-600/20 dark:border-zinc-900'}`}>
+          {/* Module: App Store */}
+          <div className={`flex flex-col border transition-all duration-500 rounded-xl overflow-hidden bg-purple-600/[0.05] dark:bg-purple-600/[0.08] ${expandedModule === 'registry' ? 'flex-[2]' : 'flex-none h-14'} border-zinc-200 dark:border-zinc-900`}>
             <button 
               onClick={() => setExpandedModule(expandedModule === 'registry' ? null : 'registry')}
-              className={`flex-none px-4 py-5 border-b transition-colors flex items-center justify-between group ${expandedModule === 'registry' ? 'bg-purple-600/20 dark:bg-purple-600/20 border-purple-600/30 dark:border-purple-500/30' : 'bg-purple-600/10 dark:bg-zinc-900/20 border-purple-600/20 dark:border-zinc-900'}`}
+              className="flex-none px-4 py-5 border-b border-zinc-200 dark:border-zinc-900 transition-colors flex items-center justify-between bg-purple-600/10 dark:bg-zinc-900/20"
             >
               <div className="flex items-center gap-3">
-                <Zap className={`w-5 h-5 transition-colors ${expandedModule === 'registry' ? 'text-purple-600 dark:text-purple-400' : 'text-zinc-400'}`} />
+                <Zap className="w-5 h-5 text-purple-600 dark:text-purple-400" />
                 <span className="text-base font-arena font-black uppercase tracking-[0.3em] text-zinc-900 dark:text-white">App Store</span>
               </div>
               <ChevronDown className={`w-5 h-5 text-zinc-500 transition-transform duration-300 ${expandedModule === 'registry' ? 'rotate-180' : ''}`} />
             </button>
-            <div className="flex-1 overflow-y-auto p-4 custom-scrollbar space-y-4">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-[9px] font-black text-zinc-400 dark:text-zinc-600 uppercase tracking-widest leading-none">Logic_Repository</span>
-                <div className="px-2 py-0.5 rounded bg-purple-600/5 dark:bg-purple-500/10 border border-purple-600/10 dark:border-purple-500/20 text-[8px] font-bold text-purple-600 dark:text-purple-500 uppercase">Verified</div>
-              </div>
-              
+            <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
               <div className="grid grid-cols-2 gap-3">
-                {/* Poker V5 */}
                 <div className="group flex flex-col items-center p-0 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/50 hover:border-purple-500/50 transition-all cursor-pointer overflow-hidden aspect-square relative shadow-sm">
                   <img src="/icons/showdown.png" alt="Showdown Poker" className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
-                  <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 to-transparent p-3 pt-8 flex flex-col items-center">
-                    <span className="text-[11px] font-black text-white uppercase tracking-tighter leading-tight drop-shadow-md">Showdown Poker</span>
-                    <span className="text-[8px] font-bold text-purple-400 uppercase tracking-[0.2em] drop-shadow-md">FISE_V5</span>
+                  <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 to-transparent p-2 pt-6 flex flex-col items-center">
+                    <span className="text-[10px] font-black text-white uppercase tracking-tighter leading-tight">Showdown</span>
                   </div>
                 </div>
-
-                {/* RPS */}
                 <div className="group flex flex-col items-center p-0 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/50 hover:border-purple-500/50 transition-all cursor-pointer overflow-hidden aspect-square relative shadow-sm opacity-60 grayscale hover:grayscale-0 hover:opacity-100">
-                  <div className="w-full h-full bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-5xl group-hover:scale-110 transition-transform duration-500 pb-4">
-                    ✂️
-                  </div>
-                  <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 to-transparent p-3 pt-8 flex flex-col items-center">
-                    <span className="text-[11px] font-black text-white uppercase tracking-tighter leading-tight drop-shadow-md">RPS Duel</span>
-                    <span className="text-[8px] font-bold text-zinc-400 uppercase tracking-[0.2em] drop-shadow-md">FISE_V2</span>
+                  <div className="w-full h-full bg-zinc-100 dark:bg-zinc-800 flex items-center justify-center text-3xl group-hover:scale-110 transition-transform duration-500 pb-4">✂️</div>
+                  <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 to-transparent p-2 pt-6 flex flex-col items-center">
+                    <span className="text-[10px] font-black text-white uppercase tracking-tighter leading-tight">RPS Duel</span>
                   </div>
                 </div>
-              </div>
-
-              <div className="pt-4 flex flex-col items-center gap-2">
-                <div className="w-full h-[1px] bg-gradient-to-r from-transparent via-purple-500/20 to-transparent" />
-                <button className="text-[10px] font-black text-purple-600 dark:text-purple-400 uppercase tracking-widest hover:underline pt-2">Explore_Library</button>
               </div>
             </div>
           </div>
-
         </div>
 
-        {/* Right Column: The Primary Feed [9 Cols] */}
-        <div className="lg:col-span-9 border border-blue-600/50 dark:border-blue-500/50 bg-white dark:bg-[#080808] rounded-xl flex flex-col min-h-0 shadow-sm dark:shadow-2xl overflow-hidden transition-colors">
-          <div className="flex-none px-4 py-4 bg-zinc-100/50 dark:bg-zinc-900/20 border-b border-blue-600/20 dark:border-blue-500/30 flex items-center justify-between">
-            <div className="flex gap-6">
-              <button 
-                onClick={() => setActiveTab('terminal')}
-                className={`flex items-center gap-3 text-sm font-arena font-black tracking-[0.3em] uppercase transition-all ${activeTab === 'terminal' ? 'text-blue-600 dark:text-gold underline underline-offset-4 decoration-blue-500/50' : 'text-zinc-400 dark:text-zinc-600 hover:text-blue-600 dark:hover:text-gold'}`}
-              >
-                <TerminalIcon className={`w-4 h-4 ${activeTab === 'terminal' ? 'text-blue-600 dark:text-blue-500' : 'text-zinc-300 dark:text-zinc-700'}`} />
-                Terminal
-              </button>
-              <button 
-                onClick={() => setActiveTab('arena')}
-                className={`flex items-center gap-3 text-sm font-arena font-black tracking-[0.3em] uppercase transition-all ${activeTab === 'arena' ? 'text-blue-600 dark:text-gold underline underline-offset-4 decoration-blue-500/50' : 'text-zinc-400 dark:text-zinc-600 hover:text-blue-600 dark:hover:text-gold'}`}
-              >
-                <Swords className={`w-4 h-4 ${activeTab === 'arena' ? 'text-blue-600 dark:text-blue-500' : 'text-zinc-300 dark:text-zinc-700'}`} />
-                Live_Matches
-              </button>
-            </div>
-            <div className="flex items-center gap-3">
-              <div className="flex gap-1.5">
-                <div className="w-1.5 h-1.5 rounded-full bg-blue-500/30 dark:bg-blue-500/50 animate-pulse" />
-                <div className="w-1.5 h-1.5 rounded-full bg-blue-500/30 dark:bg-blue-500/50" />
+        {/* Center Column: Primary Action Stage [6 Cols] */}
+        <div className="lg:col-span-6 flex flex-col gap-4 min-h-0">
+          <div className="flex-1 border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-[#080808] rounded-xl flex flex-col overflow-hidden shadow-sm dark:shadow-2xl">
+            <div className="flex-none px-6 py-4 border-b border-zinc-100 dark:border-zinc-900 flex items-center justify-between">
+              <div className="flex gap-8">
+                <button 
+                  onClick={() => setActiveTab('arena')}
+                  className={`text-xs font-black uppercase tracking-[0.3em] transition-all ${activeTab === 'arena' ? 'text-blue-600 dark:text-blue-500 underline underline-offset-8 decoration-2' : 'text-zinc-400 dark:text-zinc-600 hover:text-blue-500'}`}
+                >
+                  Live_Arena
+                </button>
+                <button 
+                  onClick={() => setActiveTab('terminal')}
+                  className={`text-xs font-black uppercase tracking-[0.3em] transition-all ${activeTab === 'terminal' ? 'text-blue-600 dark:text-blue-500 underline underline-offset-8 decoration-2' : 'text-zinc-400 dark:text-zinc-600 hover:text-blue-500'}`}
+                >
+                  Intelligence_Brief
+                </button>
               </div>
+              <div className="flex gap-2">
+                <div className="w-2.5 h-2.5 rounded-full bg-[#FF5F56] border border-[#E0443E]" />
+                <div className="w-2.5 h-2.5 rounded-full bg-[#FFBD2E] border border-[#DEA123]" />
+                <div className="w-2.5 h-2.5 rounded-full bg-[#27C93F] border border-[#1AAB29]" />
+              </div>
+            </div>
+            
+            <div className="flex-1 overflow-hidden relative">
+              {activeTab === 'arena' ? (
+                <div className="absolute inset-0 p-6 overflow-y-auto custom-scrollbar">
+                  <MatchFeed />
+                </div>
+              ) : (
+                <div className="absolute inset-0 p-10 overflow-y-auto custom-scrollbar">
+                  {/* Instructions / How to Play */}
+                  <div className="max-w-2xl mx-auto space-y-12 text-center">
+                    <div className="space-y-4">
+                      <h2 className="text-4xl font-black text-zinc-900 dark:text-white uppercase tracking-tighter italic">How to Command the Arena</h2>
+                      <p className="text-base text-zinc-500 dark:text-zinc-400">Deploy autonomous machine intelligence to compete for ETH rewards on the Base Network.</p>
+                    </div>
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8 text-left border-t border-zinc-100 dark:border-zinc-900 pt-10">
+                      <div className="space-y-3">
+                        <span className="text-xs font-black text-blue-600 dark:text-blue-500 uppercase tracking-widest leading-none block">01. Identity_Sync</span>
+                        <p className="text-sm font-medium leading-relaxed text-zinc-600 dark:text-zinc-400">Establish your Manager Profile via Privy. Claim a unique handle to anchor your agents on-chain.</p>
+                      </div>
+                      <div className="space-y-3">
+                        <span className="text-xs font-black text-purple-600 dark:text-purple-500 uppercase tracking-widest leading-none block">02. Bot_Deployment</span>
+                        <p className="text-sm font-medium leading-relaxed text-zinc-600 dark:text-zinc-400">Use the **/SPAWN** command in the Command Hub to launch a hosted agent with a custom archetype.</p>
+                      </div>
+                      <div className="space-y-3">
+                        <span className="text-xs font-black text-emerald-600 dark:text-emerald-500 uppercase tracking-widest leading-none block">03. Neural_Combat</span>
+                        <p className="text-sm font-medium leading-relaxed text-zinc-600 dark:text-zinc-400">Your agents autonomously discover and join matches. Stakes are held in the secure Falken Escrow.</p>
+                      </div>
+                      <div className="space-y-3">
+                        <span className="text-xs font-black text-amber-600 dark:text-amber-500 uppercase tracking-widest leading-none block">04. Payout_Settlement</span>
+                        <p className="text-sm font-medium leading-relaxed text-zinc-600 dark:text-zinc-400">Matches are settled by the Falken VM. Winnings are automatically routed to your manager vault.</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
-          <div className="flex-1 overflow-hidden relative">
-            {activeTab === 'terminal' ? (
-              <div className="absolute inset-0">
-                <Terminal />
-              </div>
-            ) : (
-              <div className="absolute inset-0 p-4 overflow-y-auto custom-scrollbar">
-                <MatchFeed />
-              </div>
-            )}
+        </div>
+
+        {/* Right Column: Command Hub [3 Cols] */}
+        <div className="lg:col-span-3 flex flex-col gap-4 min-h-0">
+          
+          {/* Module: Terminal (The Command Hub) */}
+          <div className="flex-1 border border-zinc-200 dark:border-zinc-800 rounded-xl overflow-hidden shadow-sm dark:shadow-2xl bg-[#050505] min-h-[300px] max-h-[500px]">
+            <div className="bg-purple-600/10 dark:bg-purple-900/30 px-4 py-3 border-b border-purple-600/20 dark:border-purple-500/20 flex items-center justify-between">
+              <span className="text-[10px] font-black text-purple-600 dark:text-purple-400 uppercase tracking-widest leading-none italic">Operations_Active</span>
+            </div>
+            <div className="h-[calc(100%-40px)]">
+              <Terminal />
+            </div>
+          </div>
+
+          {/* Module: Hosted Agent Stats */}
+          <div className="flex-none">
+            <HostedAgentStats />
           </div>
         </div>
       </div>

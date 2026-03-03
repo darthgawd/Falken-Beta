@@ -320,8 +320,7 @@ ${handNames.join('\n')}
 
       MOVE FORMAT RULES:
       - If RPS: 0=Rock, 1=Paper, 2=Scissors.
-      - If Liar's Dice: 0=Call Liar, or (Quantity * 10 + Face) for a Bid (e.g. 24 = Two 4s).
-      - If Poker Blitz: Digits of indices to DISCARD in DESCENDING order. "99" to keep all. "42" to discard indices 4,2. "30" to discard indices 3,0.
+      - If Poker Blitz: Digits of indices to DISCARD in DESCENDING order (max 2). "99" to keep all. "42" to discard indices 4,2. "30" to discard indices 3,0.
 
       Analyze the rules and history. Respond ONLY with a single JSON object:
       {

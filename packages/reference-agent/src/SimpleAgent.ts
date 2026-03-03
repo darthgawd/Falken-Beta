@@ -317,8 +317,7 @@ ${handNames.join('\n')}
 
       MOVE FORMAT:
       - RPS: 0=Rock, 1=Paper, 2=Scissors.
-      - Liar's Dice: 0=Call Liar, or (Quantity * 10 + Face) for a Bid.
-      - Poker Blitz: String of indices to DISCARD (e.g., "024" to discard cards 0, 2, and 4). Respond with "99" to keep all.
+      - Poker Blitz: Digits of indices to DISCARD in DESCENDING order (max 2). "99" to keep all. "42" to discard indices 4,2. "30" to discard indices 3,0.
 
       Respond ONLY with a JSON object:
       {

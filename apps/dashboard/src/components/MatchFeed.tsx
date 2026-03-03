@@ -24,13 +24,17 @@ interface Match {
 }
 
 const RPS_LOGIC = (process.env.NEXT_PUBLIC_RPS_LOGIC_ADDRESS || '').toLowerCase();
+const POKER_ALIASES = [
+  '0x4173a4e2e54727578fd50a3f1e721827c4c97c3a2824ca469c0ec730d4264b43', // V4
+  '0xec63afc7c67678adbe7a60af04d49031878d1e78eff9758b1b79edeb7546dfdf'  // V5
+];
 const ESCROW_ADDRESS = process.env.NEXT_PUBLIC_ESCROW_ADDRESS as `0x${string}`;
 
 const ESCROW_ABI = [
   { name: 'joinMatch', type: 'function', stateMutability: 'payable', inputs: [{ name: '_matchId', type: 'uint256' }], outputs: [] },
 ] as const;
 
-type GameTab = 'ALL' | 'RPS';
+type GameTab = 'ALL' | 'POKER' | 'RPS';
 
 export function MatchFeed() {
   const { authenticated, login } = usePrivy();
@@ -80,8 +84,9 @@ export function MatchFeed() {
         .order('created_at', { ascending: false });
       
       if (activeTab === 'RPS') query = query.eq('game_logic', RPS_LOGIC);
+      if (activeTab === 'POKER') query = query.in('game_logic', POKER_ALIASES);
 
-      const { data: matchData } = await query.limit(50);
+      const { data: matchData } = await query.limit(100);
       if (!matchData) {
         setMatches([]);
         setLoading(false);
@@ -103,9 +108,8 @@ export function MatchFeed() {
 
       const profileMap = new Map(profiles?.map(p => [p.address.toLowerCase(), p.nickname]) || []);
 
-      // 4. Gating: Only include matches where Player A is a registered entity
+      // 4. Map nicknames (without filtering out unregistered entities)
       const enrichedMatches = matchData
-        .filter(m => profileMap.has(m.player_a.toLowerCase())) // The "Gate"
         .map(m => ({
           ...m,
           player_a_nickname: profileMap.get(m.player_a.toLowerCase()),
@@ -146,7 +150,7 @@ export function MatchFeed() {
   return (
     <div className="space-y-6 transition-colors duration-500 font-arena">
       <div className="flex gap-4 border-b border-zinc-100 dark:border-zinc-900 pb-4">
-        {(['ALL', 'RPS'] as GameTab[]).map((tab) => (
+        {(['ALL', 'POKER', 'RPS'] as GameTab[]).map((tab) => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
@@ -193,10 +197,12 @@ export function MatchFeed() {
               {/* Game Badge */}
               <div className="flex flex-col items-center min-w-[40px]">
                 <div className={`text-[10px] font-black tracking-widest ${
-                  match.game_logic.toLowerCase() === RPS_LOGIC ? 'text-blue-600 dark:text-blue-500' :
+                  match.game_logic.toLowerCase() === RPS_LOGIC ? 'text-orange-500' :
+                  POKER_ALIASES.includes(match.game_logic.toLowerCase()) ? 'text-blue-500' :
                   'text-zinc-400 dark:text-zinc-700'
                 }`}>
-                  {match.game_logic.toLowerCase() === RPS_LOGIC ? 'RPS' : 'FISE'}
+                  {match.game_logic.toLowerCase() === RPS_LOGIC ? 'RPS' : 
+                   POKER_ALIASES.includes(match.game_logic.toLowerCase()) ? 'POKER' : 'FISE'}
                 </div>
                 <div className="text-xs font-black text-black dark:text-zinc-200 tabular-nums opacity-80 group-hover:opacity-100 transition-opacity">#{match.match_id.split('-').pop()}</div>
               </div>

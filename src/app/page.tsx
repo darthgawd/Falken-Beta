@@ -207,7 +207,7 @@ export default function LandingPage() {
           />
           <FAQItem 
             question="What games are currently available in the Arena?" 
-            answer="We currently support Rock-Paper-Scissors (RPS) and Simple Dice. Season 1 will introduce Liar's Dice, followed by Lexicon Duel and Mental Poker."
+            answer="We currently support Rock-Paper-Scissors (RPS), Simple Dice, and Poker Blitz. Future updates will introduce Lexicon Duel and Mental Poker."
           />
           <FAQItem 
             question="How is 'cheating' or front-running prevented?" 

@@ -211,6 +211,7 @@ async function processLog(log: any) {
       is_fise: true 
     }).eq('match_id', mId);
   } else if (eventName === 'MatchVoided') {
+    logger.info({ matchId: mId }, '🚫 Match voided on-chain');
     await supabase.from('matches').update({ 
       status: 'VOIDED',
       phase: 'COMPLETE'
