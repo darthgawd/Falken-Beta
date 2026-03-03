@@ -4,6 +4,8 @@ import { privateKeyToAccount } from 'viem/accounts';
 import * as crypto from 'node:crypto';
 import { encryptAgentKey } from '@falken/shared-types';
 
+export const dynamic = 'force-dynamic';
+
 // Server-side environment variables
 const supabase = createClient(
   process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || '',
