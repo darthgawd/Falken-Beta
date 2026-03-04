@@ -71,11 +71,6 @@ const CardDisplay = ({ cardId, isDiscarded = false }: { cardId: number, isDiscar
   );
 };
 
-const HAND_LABELS = [
-  "High Card", "Pair", "Two Pair", "Three of a Kind", 
-  "Straight", "Flush", "Full House", "Four of a Kind", "Straight Flush"
-];
-
 const PokerHand = ({ player, matchId, move, round, playerA, saltA, saltB, logicId }: { player: string, matchId: string, move: number | string, round: number, playerA: string, saltA?: string, saltB?: string, logicId: string }) => {
   // 1. Generate deck identically to poker.js
   const generateDeck = (seedStr: string) => {
@@ -91,29 +86,6 @@ const PokerHand = ({ player, matchId, move, round, playerA, saltA, saltB, logicI
       [deck[i], deck[j]] = [deck[j], deck[i]];
     }
     return deck;
-  };
-
-  const getHandRank = (hand: number[]) => {
-    const ranks = hand.map(c => c % 13).sort((a, b) => b - a);
-    const suits = hand.map(c => Math.floor(c / 13));
-    const counts: Record<number, number> = {};
-    ranks.forEach(r => counts[r] = (counts[r] || 0) + 1);
-    const sortedCounts = Object.entries(counts)
-      .map(([rank, count]) => [Number(rank), count])
-      .sort((a, b) => b[1] - a[1] || b[0] - a[0]);
-    const isFlush = new Set(suits).size === 1;
-    let isStraight = ranks.every((r, i) => i === 0 || ranks[i-1] - r === 1);
-    if (!isStraight && ranks[0] === 12 && ranks[1] === 3 && ranks[2] === 2 && ranks[3] === 1 && ranks[4] === 0) isStraight = true;
-
-    if (isStraight && isFlush) return 8;
-    if (sortedCounts[0][1] === 4) return 7;
-    if (sortedCounts[0][1] === 3 && sortedCounts[1][1] === 2) return 6;
-    if (isFlush) return 5;
-    if (isStraight) return 4;
-    if (sortedCounts[0][1] === 3) return 3;
-    if (sortedCounts[0][1] === 2 && sortedCounts[1][1] === 2) return 2;
-    if (sortedCounts[0][1] === 2) return 1;
-    return 0;
   };
 
   // 2. Determine Seed based on Logic Version
@@ -141,18 +113,11 @@ const PokerHand = ({ player, matchId, move, round, playerA, saltA, saltB, logicI
     if (idx >= 0 && idx < 5) finalHand[idx] = deck[replacementOffset + i]; 
   });
 
-  const handRank = getHandRank(finalHand);
-
   return (
-    <div className="flex flex-col gap-2 scale-110 origin-left mt-2">
-      <div className="text-[10px] font-black text-zinc-500 uppercase tracking-[0.2em] bg-white/5 w-fit px-2 py-0.5 rounded-sm mb-1 border border-white/5 italic">
-        {HAND_LABELS[handRank]}
-      </div>
-      <div className="flex gap-3 bg-black/40 p-4 rounded-2xl border border-zinc-800/50">
-        {finalHand.map((cid, i) => (
-          <CardDisplay key={i} cardId={cid} />
-        ))}
-      </div>
+    <div className="flex gap-3 bg-black/40 p-4 rounded-2xl border border-zinc-800/50 scale-110 origin-left mt-2">
+      {finalHand.map((cid, i) => (
+        <CardDisplay key={i} cardId={cid} />
+      ))}
     </div>
   );
 };
@@ -268,14 +233,13 @@ export default function MatchDetail({ params }: { params: Promise<{ id: string }
     const pokerLogicIdV4 = '0x4173a4e2e54727578fd50a3f1e721827c4c97c3a2824ca469c0ec730d4264b43';
     const pokerLogicIdV5 = '0xec63afc7c67678adbe7a60af04d49031878d1e78eff9758b1b79edeb7546dfdf';
     const pokerLogicIdV6 = '0x5f164061c4cbb981098161539f7f691650e0c245be54ade84ea5b57496955846';
-    const pokerLogicIdV1Today = '0x61266711df04ebe17432b3482471e64c69150e370a9c558657b28944233b97d1';
     const rpsLogicId = '0xf2f80f1811f9e2c534946f0e8ddbdbd5c1e23b6e48772afe3bccdb9f2e1cfdf3';
     const rpsLogicIdV2 = '0x31adebc3e6f489dab0e3d7867ef5cf63b27bd0735ce35f1cc7f671e3c303ef3a';
 
     const cleanLogicId = logicId.toLowerCase();
 
     // 1. POKER BLITZ
-    if (cleanLogicId === pokerLogicIdV4 || cleanLogicId === pokerLogicIdV5 || cleanLogicId === pokerLogicIdV6 || cleanLogicId === pokerLogicIdV1Today) {
+    if (cleanLogicId === pokerLogicIdV4 || cleanLogicId === pokerLogicIdV5 || cleanLogicId === pokerLogicIdV6) {
       if (Number(move) === 99) return '🃏 KEEP ALL';
       const count = move.toString().length;
       return `🃏 ${count} ${count === 1 ? 'CARD' : 'CARDS'} DISCARDED`;
@@ -423,7 +387,7 @@ export default function MatchDetail({ params }: { params: Promise<{ id: string }
                         <span className="text-3xl font-black text-blue-400 italic tracking-tight">
                           {getFiseMoveLabel(round.a.move, match.game_logic)}
                         </span>
-                        {(match.game_logic.toLowerCase() === '0x4173a4e2e54727578fd50a3f1e721827c4c97c3a2824ca469c0ec730d4264b43' || match.game_logic.toLowerCase() === '0xec63afc7c67678adbe7a60af04d49031878d1e78eff9758b1b79edeb7546dfdf' || match.game_logic.toLowerCase() === '0x5f164061c4cbb981098161539f7f691650e0c245be54ade84ea5b57496955846' || match.game_logic.toLowerCase() === '0x61266711df04ebe17432b3482471e64c69150e370a9c558657b28944233b97d1') && round.a.salt && (
+                        {(match.game_logic.toLowerCase() === '0x4173a4e2e54727578fd50a3f1e721827c4c97c3a2824ca469c0ec730d4264b43' || match.game_logic.toLowerCase() === '0xec63afc7c67678adbe7a60af04d49031878d1e78eff9758b1b79edeb7546dfdf' || match.game_logic.toLowerCase() === '0x5f164061c4cbb981098161539f7f691650e0c245be54ade84ea5b57496955846') && round.a.salt && (
                           <PokerHand player={match.player_a} matchId={match.match_id} move={round.a.move} round={round.round} playerA={match.player_a} saltA={round.a?.salt} saltB={round.b?.salt} logicId={match.game_logic} />
                         )}
                       </div>
@@ -446,7 +410,7 @@ export default function MatchDetail({ params }: { params: Promise<{ id: string }
                         <span className="text-3xl font-black text-purple-400 italic tracking-tight">
                           {getFiseMoveLabel(round.b.move, match.game_logic)}
                         </span>
-                        {(match.game_logic.toLowerCase() === '0x4173a4e2e54727578fd50a3f1e721827c4c97c3a2824ca469c0ec730d4264b43' || match.game_logic.toLowerCase() === '0xec63afc7c67678adbe7a60af04d49031878d1e78eff9758b1b79edeb7546dfdf' || match.game_logic.toLowerCase() === '0x5f164061c4cbb981098161539f7f691650e0c245be54ade84ea5b57496955846' || match.game_logic.toLowerCase() === '0x61266711df04ebe17432b3482471e64c69150e370a9c558657b28944233b97d1') && round.b.salt && (
+                        {(match.game_logic.toLowerCase() === '0x4173a4e2e54727578fd50a3f1e721827c4c97c3a2824ca469c0ec730d4264b43' || match.game_logic.toLowerCase() === '0xec63afc7c67678adbe7a60af04d49031878d1e78eff9758b1b79edeb7546dfdf' || match.game_logic.toLowerCase() === '0x5f164061c4cbb981098161539f7f691650e0c245be54ade84ea5b57496955846') && round.b.salt && (
                           <PokerHand player={match.player_b} matchId={match.match_id} move={round.b.move} round={round.round} playerA={match.player_a} saltA={round.a?.salt} saltB={round.b?.salt} logicId={match.game_logic} />
                         )}
                       </div>
