@@ -1,6 +1,6 @@
 import { createPublicClient, http } from 'viem';
 import { baseSepolia } from 'viem/chains';
-import { Referee, RoundWinner } from './Referee.js';
+import { Referee } from './Referee.js';
 import { Reconstructor } from './Reconstructor.js';
 import { Settler } from './Settler.js';
 import { Fetcher } from './Fetcher.js';
@@ -25,33 +25,17 @@ const FISE_ESCROW_ABI = [
     stateMutability: 'view',
     inputs: [{ name: '_matchId', type: 'uint256' }],
     outputs: [{ name: '', type: 'tuple', components: [
-      { name: 'playerA', type: 'address' },
-      { name: 'playerB', type: 'address' },
-      { name: 'stake', type: 'uint256' },
-      { name: 'gameLogic', type: 'address' },
-      { name: 'winsA', type: 'uint8' },
-      { name: 'winsB', type: 'uint8' },
-      { name: 'currentRound', type: 'uint8' },
-      { name: 'drawCounter', type: 'uint8' },
-      { name: 'phase', type: 'uint8' },
-      { name: 'status', type: 'uint8' },
-      { name: 'commitDeadline', type: 'uint256' },
-      { name: 'revealDeadline', type: 'uint256' }
+      { name: 'playerA', type: 'address' }, { name: 'playerB', type: 'address' }, { name: 'stake', type: 'uint256' }, { name: 'gameLogic', type: 'address' },
+      { name: 'winsA', type: 'uint8' }, { name: 'winsB', type: 'uint8' }, { name: 'currentRound', type: 'uint8' }, { name: 'drawCounter', type: 'uint8' },
+      { name: 'phase', type: 'uint8' }, { name: 'status', type: 'uint8' }, { name: 'commitDeadline', type: 'uint256' }, { name: 'revealDeadline', type: 'uint256' }
     ] }]
   },
   {
     name: 'getRoundStatus',
     type: 'function',
     stateMutability: 'view',
-    inputs: [
-      { name: 'matchId', type: 'uint256' },
-      { name: 'round', type: 'uint8' },
-      { name: 'player', type: 'address' }
-    ],
-    outputs: [
-      { name: 'commitHash', type: 'bytes32' },
-      { name: 'revealed', type: 'bool' }
-    ]
+    inputs: [{ name: 'matchId', type: 'uint256' }, { name: 'round', type: 'uint8' }, { name: 'player', type: 'address' }],
+    outputs: [{ name: 'commitHash', type: 'bytes32' }, { name: 'revealed', type: 'bool' }]
   },
   {
     name: 'fiseMatches',
@@ -68,47 +52,28 @@ const LOGIC_REGISTRY_ABI = [
     type: 'function',
     stateMutability: 'view',
     inputs: [{ name: '', type: 'bytes32' }],
-    outputs: [
-      { name: 'ipfsCID', type: 'string' },
-      { name: 'developer', type: 'address' },
-      { name: 'isVerified', type: 'bool' },
-      { name: 'createdAt', type: 'uint256' },
-      { name: 'totalVolume', type: 'uint256' }
-    ]
+    outputs: [{ name: 'ipfsCID', type: 'string' }, { name: 'developer', type: 'address' }, { name: 'isVerified', type: 'bool' }, { name: 'createdAt', type: 'uint256' }, { name: 'totalVolume', type: 'uint256' }]
   }
 ] as const;
 
-/**
- * Falken Watcher (Simplified)
- *
- * Triggers on MoveRevealed events, then checks ON-CHAIN whether
- * BOTH players have revealed before proceeding. No more race conditions.
- */
 export class Watcher {
-  private client = createPublicClient({
-    chain: baseSepolia,
-    transport: http(process.env.RPC_URL)
-  });
-
+  private client = createPublicClient({ chain: baseSepolia, transport: http(process.env.RPC_URL) });
   private referee = new Referee();
   private reconstructor = new Reconstructor();
   private settler = new Settler();
   private fetcher = new Fetcher();
-  private settledRounds = new Set<string>(); // "matchId-round" keys to prevent double settlement
+  private settledRounds = new Set<string>();
 
   async start(escrowAddress: `0x${string}`, registryAddress: `0x${string}`) {
     logger.info({ escrowAddress, registryAddress }, 'WATCHER_INITIALIZED');
-
-    // Single trigger source: blockchain MoveRevealed events
     this.client.watchContractEvent({
       address: escrowAddress,
       abi: FISE_ESCROW_ABI,
       eventName: 'MoveRevealed',
       onLogs: async (logs) => {
         for (const log of logs) {
-          const { matchId } = log.args;
-          if (!matchId) continue;
-          await this.processMatch(matchId, escrowAddress, registryAddress);
+          const { matchId } = log.args as any;
+          if (matchId) await this.processMatch(BigInt(matchId), escrowAddress, registryAddress);
         }
       }
     });
@@ -116,116 +81,70 @@ export class Watcher {
 
   private async processMatch(onChainMatchId: bigint, escrowAddress: `0x${string}`, registryAddress: `0x${string}`) {
     const dbMatchId = `${escrowAddress.toLowerCase()}-${onChainMatchId.toString()}`;
+    let currentRoundNum = 0;
 
     try {
-      // 1. Read on-chain state — the source of truth
-      const matchData = await this.client.readContract({
-        address: escrowAddress,
-        abi: FISE_ESCROW_ABI,
-        functionName: 'getMatch',
-        args: [onChainMatchId]
-      });
-
+      const matchData = await this.client.readContract({ address: escrowAddress, abi: FISE_ESCROW_ABI, functionName: 'getMatch', args: [onChainMatchId] });
       const { playerA, playerB, currentRound, phase, status } = matchData;
+      currentRoundNum = Number(currentRound);
 
-      // Only process active matches in reveal phase
-      if (Number(status) !== 1) return; // Not ACTIVE
-      if (Number(phase) !== 1) return;  // Not in REVEAL phase
+      if (Number(status) !== 1 || Number(phase) !== 1) return;
 
-      // Dedup: already settled this round?
-      const roundKey = `${onChainMatchId}-${currentRound}`;
+      const roundKey = `${onChainMatchId}-${currentRoundNum}`;
       if (this.settledRounds.has(roundKey)) return;
 
-      // 2. Check on-chain: have BOTH players revealed?
-      const [, revealedA] = await this.client.readContract({
-        address: escrowAddress,
-        abi: FISE_ESCROW_ABI,
-        functionName: 'getRoundStatus',
-        args: [onChainMatchId, currentRound, playerA]
-      });
-      const [, revealedB] = await this.client.readContract({
-        address: escrowAddress,
-        abi: FISE_ESCROW_ABI,
-        functionName: 'getRoundStatus',
-        args: [onChainMatchId, currentRound, playerB]
-      });
+      const [, revA] = await this.client.readContract({ address: escrowAddress, abi: FISE_ESCROW_ABI, functionName: 'getRoundStatus', args: [onChainMatchId, currentRound, playerA] });
+      const [, revB] = await this.client.readContract({ address: escrowAddress, abi: FISE_ESCROW_ABI, functionName: 'getRoundStatus', args: [onChainMatchId, currentRound, playerB] });
 
-      if (!revealedA || !revealedB) {
-        logger.debug({ matchId: onChainMatchId.toString(), round: currentRound, revealedA, revealedB }, 'WAITING_FOR_BOTH_REVEALS');
-        return;
-      }
+      if (!revA || !revB) return;
+this.settledRounds.add(roundKey);
+logger.info({ matchId: onChainMatchId.toString(), round: currentRoundNum }, 'BOTH_REVEALED // Processing');
 
-      // Mark as being settled to prevent duplicate processing
-      this.settledRounds.add(roundKey);
+// 3. Wait for indexer to sync revealed moves to DB
+const { moves } = await this.getSyncedMoves(dbMatchId);
 
-      logger.info({ matchId: onChainMatchId.toString(), round: currentRound }, 'BOTH_REVEALED // Processing');
+if (moves.length < 2) {
+  logger.warn({ matchId: onChainMatchId.toString(), round: currentRoundNum, dbMoves: moves.length }, 'DB_NOT_SYNCED // Waiting for indexer to finish reveals');
+  this.settledRounds.delete(roundKey);
+  return;
+}
 
-      // 3. Wait for indexer to sync moves to DB (dual-reveal gate)
-      const { context, moves: allMoves } = await this.getSyncedMoves(dbMatchId);
+// 4. Fetch logic from IPFS
+      const logicId = await this.client.readContract({ address: escrowAddress, abi: FISE_ESCROW_ABI, functionName: 'fiseMatches', args: [onChainMatchId] });
+      const registryEntry = await this.client.readContract({ address: registryAddress, abi: LOGIC_REGISTRY_ABI, functionName: 'registry', args: [logicId] });
+      const ipfsCID = registryEntry[0];
 
-      // Filter moves to only include the CURRENT round
-      const moves = allMoves.filter(m => m.round === Number(currentRound));
+      if (!ipfsCID) throw new Error("EMPTY_CID_IN_REGISTRY");
 
-      if (moves.length < 2) {
-        logger.warn({ matchId: onChainMatchId.toString(), round: currentRound, movesFound: moves.length }, 'DB_NOT_SYNCED // Current round moves missing');
-        this.settledRounds.delete(roundKey); // Allow retry
-        return;
-      }
-
-      // 4. Fetch logic from IPFS
-      const logicId = await this.client.readContract({
-        address: escrowAddress,
-        abi: FISE_ESCROW_ABI,
-        functionName: 'fiseMatches',
-        args: [onChainMatchId]
-      });
-      const [ipfsCID] = await this.client.readContract({
-        address: registryAddress,
-        abi: LOGIC_REGISTRY_ABI,
-        functionName: 'registry',
-        args: [logicId as `0x${string}`]
-      });
       const jsCode = await this.fetcher.fetchLogic(ipfsCID);
+      const refereeContext = { playerA, playerB, stake: matchData.stake.toString(), matchId: onChainMatchId.toString(), round: currentRoundNum };
 
-      // 5. Resolve round
-      logger.info({ dbMatchId, movesCount: moves.length, moves: moves.map(m => ({ player: m.player?.slice(0,10), moveData: m.moveData, salt: m.salt ? '✓' : '✗' })) }, 'REFEREE_INPUT');
-      const resolution = await this.referee.resolveRound(jsCode, context, moves);
+      logger.info({ dbMatchId, movesCount: moves.length }, 'REFEREE_INPUT');
+      const resolution = await this.referee.resolveRound(jsCode, refereeContext, moves);
 
       if (resolution) {
-        logger.info({ dbMatchId, winner: resolution.winner, description: resolution.description }, 'ROUND_RESOLVED // SUBMITTING_SETTLEMENT');
+        logger.info({ dbMatchId, winner: resolution.winner, description: resolution.description }, 'ROUND_RESOLVED');
         await this.settler.resolveRound(escrowAddress, onChainMatchId, resolution.winner || 0, resolution.description);
       } else {
-        logger.info({ dbMatchId, movesCount: moves.length }, 'LOGIC_PENDING // RESETTING_PHASE_FOR_NEXT_TURN');
-        await this.settler.resolveRound(escrowAddress, onChainMatchId, 0, "Round logic pending or draw.");
+        await this.settler.resolveRound(escrowAddress, onChainMatchId, 0, "Round logic pending.");
       }
 
-      // Clean up old round keys after a delay (match may have many rounds)
       setTimeout(() => this.settledRounds.delete(roundKey), 60_000);
-
     } catch (err: any) {
       logger.error({ matchId: onChainMatchId.toString(), err: err.message }, 'VM_PROCESSING_FAULT');
-      // Allow retry on error
-      const roundKey = `${onChainMatchId}-0`;
-      this.settledRounds.delete(roundKey);
+      if (currentRoundNum > 0) this.settledRounds.delete(`${onChainMatchId}-${currentRoundNum}`);
     }
   }
 
-  private async getSyncedMoves(dbMatchId: string, maxRetries = 8, delayMs = 2000) {
+  private async getSyncedMoves(dbMatchId: string, maxRetries = 10, delayMs = 2000) {
     for (let attempt = 0; attempt < maxRetries; attempt++) {
       try {
         const result = await this.reconstructor.getMatchHistory(dbMatchId);
-        if (result.moves.length >= 2) return result;
-
-        if (attempt < maxRetries - 1) {
-          logger.debug({ dbMatchId, attempt, movesFound: result.moves.length }, 'WAITING_FOR_DB_SYNC');
-          await new Promise(r => setTimeout(r, delayMs));
-        }
+        // The Reconstructor already filters for revealed: true, so we just check length
+        if (result.moves && result.moves.length >= 2) return result;
+        await new Promise(r => setTimeout(r, delayMs));
       } catch (err: any) {
-        if (attempt < maxRetries - 1) {
-          await new Promise(r => setTimeout(r, delayMs));
-          continue;
-        }
-        throw err;
+        await new Promise(r => setTimeout(r, delayMs));
       }
     }
     return { context: null as any, moves: [] };
