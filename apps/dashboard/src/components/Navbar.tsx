@@ -124,7 +124,7 @@ export function Navbar() {
           {/* Desktop Links */}
           <div className="hidden lg:flex items-center gap-6 text-zinc-500 dark:text-zinc-500">
             {navLinks.map((link) => (
-              <Link key={link.href} href={link.href} className="text-xs font-bold hover:text-zinc-900 dark:hover:text-white transition-colors uppercase tracking-widest text-nowrap px-3 py-2 rounded-lg border border-gold/30 dark:bg-gold/5 dark:text-gold dark:border dark:border-gold/30">
+              <Link key={link.href} href={link.href} className="text-xs font-bold hover:text-zinc-900 dark:hover:text-white transition-all duration-500 uppercase tracking-widest text-nowrap px-3 py-2 rounded-lg border border-gold/30 dark:bg-gold/5 dark:text-gold dark:border dark:border-gold/30 hover:shadow-[0_0_15px_rgba(37,99,235,0.4)] dark:hover:shadow-[0_0_20px_rgba(59,130,246,0.5)]">
                 {link.label}
               </Link>
             ))}

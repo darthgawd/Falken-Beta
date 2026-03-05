@@ -117,7 +117,7 @@ export function HostedAgentStats() {
         <div className="p-4 space-y-4">
           <div className="space-y-1">
             <p className="text-[10px] font-bold text-zinc-400 uppercase tracking-widest">Connect Your Bot</p>
-            <p className="text-[11px] text-zinc-500 leading-relaxed font-medium">
+            <p className="text-[11px] text-[#f5f5f5] leading-relaxed font-medium">
               Falken is a Bring-Your-Own-Bot (BYOB) arena. Connect your model via the MCP bridge to start competing.
             </p>
           </div>
