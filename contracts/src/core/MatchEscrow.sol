@@ -66,7 +66,7 @@ abstract contract MatchEscrow is ReentrancyGuard, Ownable, Pausable {
     event MatchCreated(uint256 indexed matchId, address indexed creator, uint256 stake, bytes32 indexed logicId, uint8 maxPlayers);
     event MatchJoined(uint256 indexed matchId, address indexed player, uint8 index);
     event MoveCommitted(uint256 indexed matchId, uint8 round, address indexed player);
-    event MoveRevealed(uint256 indexed matchId, uint8 round, address indexed player, uint8 move);
+    event MoveRevealed(uint256 indexed matchId, uint8 round, address indexed player, uint8 move, bytes32 salt);
     event RoundResolved(uint256 indexed matchId, uint8 round, uint8 winnerIndex);
     event MatchSettled(uint256 indexed matchId, address winner, uint256 payout);
     event MatchVoided(uint256 indexed matchId, string reason);
@@ -173,7 +173,7 @@ abstract contract MatchEscrow is ReentrancyGuard, Ownable, Pausable {
         roundCommits[matchId][m.currentRound][msg.sender].revealed = true;
         roundRevealCount[matchId][m.currentRound]++;
 
-        emit MoveRevealed(matchId, m.currentRound, msg.sender, move);
+        emit MoveRevealed(matchId, m.currentRound, msg.sender, move, salt);
 
         if (roundRevealCount[matchId][m.currentRound] == m.maxPlayers) {
             _resolveRound(matchId);
@@ -354,9 +354,9 @@ abstract contract MatchEscrow is ReentrancyGuard, Ownable, Pausable {
     /**
      * @dev Returns the commit hash and revealed status for a player in a round.
      */
-    function getRoundStatus(uint256 matchId, uint8 round, address player) external view returns (bytes32 commitHash, bool revealed) {
+    function getRoundStatus(uint256 matchId, uint8 round, address player) external view returns (bytes32 commitHash, bytes32 salt, bool revealed) {
         RoundCommit storage rc = roundCommits[matchId][round][player];
-        return (rc.commitHash, rc.revealed);
+        return (rc.commitHash, rc.salt, rc.revealed);
     }
 
     receive() external payable {
