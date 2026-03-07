@@ -185,12 +185,14 @@ export class Watcher {
       // 1. Check if ALL players have revealed
       let allRevealed = true;
       for (const player of players) {
-        const [, revealed] = await this.client.readContract({ 
+        const roundStatus = await this.client.readContract({ 
           address: escrowAddress, 
           abi: FISE_ESCROW_ABI, 
           functionName: 'getRoundStatus', 
           args: [onChainMatchId, currentRound, player] 
-        });
+        }) as any;
+        
+        const revealed = roundStatus[2]; // Index 2 is the 'revealed' boolean
         if (!revealed) {
           allRevealed = false;
           break;

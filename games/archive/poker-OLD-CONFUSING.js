@@ -139,18 +139,4 @@ export default class ShowdownBlitzPoker {
     if (!state.complete) return 0;
     return state.result;
   }
-
-  describeState(state) {
-    const labels = ['High Card', 'Pair', 'Two Pair', 'Three of a Kind', 'Straight', 'Flush', 'Full House', 'Four of a Kind', 'Straight Flush'];
-    const handA = state.hands[state.playerA];
-    const handB = state.hands[state.playerB];
-    if (!handA || !handB) return "Waiting for unmasking...";
-    
-    const scoreA = this.calculateHandStrength(handA);
-    const scoreB = this.calculateHandStrength(handB);
-    const rankA = Math.floor(scoreA / Math.pow(16, 5));
-    const rankB = Math.floor(scoreB / Math.pow(16, 5));
-    
-    return `Player A has ${labels[rankA]}, Player B has ${labels[rankB]}`;
-  }
 }

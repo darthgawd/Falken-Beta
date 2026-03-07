@@ -5,54 +5,38 @@
 
 export default class ShowdownBlitzPoker {
   init(ctx) {
+    const players = (ctx.players || []).map(p => p.toLowerCase());
     return {
-      playerA: (ctx.playerA || '').toLowerCase(),
-      playerB: (ctx.playerB || '').toLowerCase(),
+      players,
+      playerA: players[0] || '',
+      playerB: players[1] || '',
       stake: ctx.stake,
-      matchId: ctx.matchId,  // Store matchId for deck generation
-      hands: {},    // Final hand for this specific round
-      discards: {}, // Indices discarded by each player
+      matchId: ctx.matchId,
+      hands: {},
+      discards: {},
       complete: false,
-      result: 0
+      result: 255 // Default to Draw
     };
-  }
-
-  generateDeck(seedStr) {
-    let hash = 0;
-    for (let i = 0; i < seedStr.length; i++) {
-      hash = ((hash << 5) - hash) + seedStr.charCodeAt(i);
-      hash |= 0;
-    }
-    const deck = Array.from({ length: 52 }, (_, i) => i);
-    for (let i = deck.length - 1; i > 0; i--) {
-      hash = (Math.imul(1664525, hash) + 1013904223) | 0;
-      const j = Math.abs(hash % (i + 1));
-      [deck[i], deck[j]] = [deck[j], deck[i]];
-    }
-    return deck;
   }
 
   processMove(state, move) {
     if (state.complete || !move.player) return state;
     const player = move.player.toLowerCase();
     
-    // SHARED DECK: Use matchId + round as the global seed.
-    // This ensures both players see the SAME deck, but different cards.
     const deck = this.generateDeck(state.matchId + "_" + move.round);
     
-    // Player A gets cards 0-4, Player B gets cards 5-9
     const isPlayerA = player === state.playerA;
+    const isPlayerB = player === state.playerB;
+    if (!isPlayerA && !isPlayerB) return state;
+
     const initialHandOffset = isPlayerA ? 0 : 5;
     const initialHand = deck.slice(initialHandOffset, initialHandOffset + 5);
     
-    // Handle '99' as Keep All, otherwise split digits for indices
     const moveData = move.moveData.toString();
     const discardIndices = moveData === '99' ? [] : moveData.split('').map(Number);
     state.discards[player] = discardIndices;
     
     let finalHand = [...initialHand];
-    
-    // Replacement pools: A uses 10-14, B uses 15-19
     const replacementOffset = isPlayerA ? 10 : 15;
     discardIndices.forEach((idx, i) => {
       if (idx >= 0 && idx < 5) {
@@ -62,7 +46,6 @@ export default class ShowdownBlitzPoker {
 
     state.hands[player] = finalHand;
 
-    // Resolve Round if both hands are present
     if (state.hands[state.playerA] && state.hands[state.playerB]) {
       state.complete = true;
       state.result = this.evaluateWinner(state);
@@ -74,9 +57,9 @@ export default class ShowdownBlitzPoker {
   evaluateWinner(state) {
     const scoreA = this.calculateHandStrength(state.hands[state.playerA]);
     const scoreB = this.calculateHandStrength(state.hands[state.playerB]);
-    if (scoreA > scoreB) return 1;
-    if (scoreB > scoreA) return 2;
-    return 3; // Draw/Refund
+    if (scoreA > scoreB) return 0; // Index of Player A
+    if (scoreB > scoreA) return 1; // Index of Player B
+    return 255; // Draw
   }
 
   calculateHandStrength(hand) {
@@ -136,7 +119,21 @@ export default class ShowdownBlitzPoker {
   }
 
   checkResult(state) {
-    if (!state.complete) return 0;
+    if (!state.complete) return 0; // PENDING
     return state.result;
+  }
+
+  describeState(state) {
+    const labels = ['High Card', 'Pair', 'Two Pair', 'Three of a Kind', 'Straight', 'Flush', 'Full House', 'Four of a Kind', 'Straight Flush'];
+    const handA = state.hands[state.playerA];
+    const handB = state.hands[state.playerB];
+    if (!handA || !handB) return "Waiting for unmasking...";
+    
+    const scoreA = this.calculateHandStrength(handA);
+    const scoreB = this.calculateHandStrength(handB);
+    const rankA = Math.floor(scoreA / Math.pow(16, 5));
+    const rankB = Math.floor(scoreB / Math.pow(16, 5));
+    
+    return `Player A has ${labels[rankA]}, Player B has ${labels[rankB]}`;
   }
 }

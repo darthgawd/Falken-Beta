@@ -80,6 +80,7 @@ const DICE_LOGIC = (process.env.NEXT_PUBLIC_DICE_LOGIC_ADDRESS || '').toLowerCas
 const ESCROW_ADDRESS = (process.env.NEXT_PUBLIC_ESCROW_ADDRESS || '').toLowerCase();
 
 const POKER_LOGIC_IDS = [
+  '0x9f803373e9b7dc5edddcb91c5ca2d000c78360e0d53c5d17ee9d0b6037c6358b',
   '0xa00a45cb44b39c3dc91fb7963d2dd65c217ae5b25c20cb216c1f9431900a5d61',
   '0x4173a4e2e54727578fd50a3f1e721827c4c97c3a2824ca469c0ec730d4264b43',
   '0xec63afc7c67678adbe7a60af04d49031878d1e78eff9758b1b79edeb7546dfdf',
@@ -169,6 +170,7 @@ export default function MatchDetail({ params }: { params: Promise<{ id: string }
   const sortedRounds = Object.values(groupedRounds).sort((a, b) => b.round - a.round);
 
   const getFiseMoveLabel = (move: number, logicId: string) => {
+    const pokerLogicIdV3Final = '0x9f803373e9b7dc5edddcb91c5ca2d000c78360e0d53c5d17ee9d0b6037c6358b';
     const pokerLogicIdV3 = '0xa00a45cb44b39c3dc91fb7963d2dd65c217ae5b25c20cb216c1f9431900a5d61';
     const pokerLogicIdV4 = '0x4173a4e2e54727578fd50a3f1e721827c4c97c3a2824ca469c0ec730d4264b43';
     const pokerLogicIdV5 = '0xec63afc7c67678adbe7a60af04d49031878d1e78eff9758b1b79edeb7546dfdf';
@@ -178,7 +180,7 @@ export default function MatchDetail({ params }: { params: Promise<{ id: string }
 
     const cleanLogicId = (logicId || '').toLowerCase();
 
-    if (cleanLogicId === pokerLogicIdV3 || cleanLogicId === pokerLogicIdV4 || cleanLogicId === pokerLogicIdV5 || cleanLogicId === pokerLogicIdV6 || cleanLogicId === pokerLogicIdV1Today) {
+    if (cleanLogicId === pokerLogicIdV3Final || cleanLogicId === pokerLogicIdV3 || cleanLogicId === pokerLogicIdV4 || cleanLogicId === pokerLogicIdV5 || cleanLogicId === pokerLogicIdV6 || cleanLogicId === pokerLogicIdV1Today) {
       if (Number(move) === 99) return '🃏 KEEP ALL';
       const count = move.toString().length;
       return `🃏 ${count} ${count === 1 ? 'CARD' : 'CARDS'} DISCARDED`;

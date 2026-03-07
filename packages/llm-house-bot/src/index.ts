@@ -86,7 +86,7 @@ class LLMHouseBot {
     
     // Default V3 Logic IDs
     this.gameLogics = [
-      "0xa00a45cb44b39c3dc91fb7963d2dd65c217ae5b25c20cb216c1f9431900a5d61"  // Poker Blitz V3
+      "0x9f803373e9b7dc5edddcb91c5ca2d000c78360e0d53c5d17ee9d0b6037c6358b"  // Poker Blitz V3 (Final)
     ];
 
     this.wallet = new ethers.Wallet(pk!, this.provider);
