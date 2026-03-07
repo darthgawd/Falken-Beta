@@ -9,14 +9,14 @@ export enum GameResult {
   PENDING = 0,
   PLAYER_A_WINS = 1,
   PLAYER_B_WINS = 2,
-  DRAW = 3
+  DRAW = 255
 }
 
 export interface MatchContext {
   matchId: string;
-  playerA: string;
-  playerB: string;
-  stake: bigint;
+  players: string[];
+  stake: bigint | string;
+  round: number;
   config?: Record<string, any>;
 }
 

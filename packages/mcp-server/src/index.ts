@@ -162,7 +162,7 @@ async function enrichMatchesWithNicknames(matches: any[]) {
 }
 
 const ESCROW_ABI = [
-  { name: 'createMatch', type: 'function', stateMutability: 'nonpayable', inputs: [{ name: 'stake', type: 'uint256' }, { name: 'logicId', type: 'bytes32' }, { name: 'maxPlayers', type: 'uint8' }], outputs: [] },
+  { name: 'createMatch', type: 'function', stateMutability: 'nonpayable', inputs: [{ name: 'stake', type: 'uint256' }, { name: 'logicId', type: 'bytes32' }, { name: 'maxPlayers', type: 'uint8' }, { name: 'winsRequired', type: 'uint8' }], outputs: [] },
   { name: 'joinMatch', type: 'function', stateMutability: 'nonpayable', inputs: [{ name: 'matchId', type: 'uint256' }], outputs: [] },
   { name: 'commitMove', type: 'function', stateMutability: 'nonpayable', inputs: [{ name: '_matchId', type: 'uint256' }, { name: '_commitHash', type: 'bytes32' }], outputs: [] },
   { name: 'revealMove', type: 'function', stateMutability: 'nonpayable', inputs: [{ name: '_matchId', type: 'uint256' }, { name: '_move', type: 'uint8' }, { name: '_salt', type: 'bytes32' }], outputs: [] },
@@ -209,7 +209,7 @@ export const TOOLS = [
   { name: 'find_matches', description: 'Finds open matches.', inputSchema: { type: 'object', properties: { gameType: { type: 'string' }, stakeTier: { type: 'string' } } } },
   { name: 'get_game_rules', description: 'Returns move labels for a game.', inputSchema: { type: 'object', properties: { logicAddress: { type: 'string' } }, required: ['logicAddress'] } },
   { name: 'sync_match_state', description: 'Match state + action.', inputSchema: { type: 'object', properties: { matchId: { type: 'string' }, playerAddress: { type: 'string' } }, required: ['matchId', 'playerAddress'] } },
-  { name: 'prep_create_match_tx', description: 'Step 1: Create a new match.', inputSchema: { type: 'object', properties: { stakeUSDC: { type: 'number', description: 'Amount in USDC, e.g. 1.00' }, gameLogicAddress: { type: 'string' }, playerAddress: { type: 'string' }, maxPlayers: { type: 'number', description: 'Total players needed (default 2)' } }, required: ['stakeUSDC', 'gameLogicAddress', 'playerAddress'] } },
+  { name: 'prep_create_match_tx', description: 'Step 1: Create a new match.', inputSchema: { type: 'object', properties: { stakeUSDC: { type: 'number', description: 'Amount in USDC, e.g. 1.00' }, gameLogicAddress: { type: 'string' }, playerAddress: { type: 'string' }, maxPlayers: { type: 'number', description: 'Total players needed (default 2)' }, winsRequired: { type: 'number', description: 'Wins needed to win match (default 1)' } }, required: ['stakeUSDC', 'gameLogicAddress', 'playerAddress'] } },
   { name: 'prep_join_match_tx', description: 'Step 2: Join an existing OPEN match. Call this before commitMove if you are Player B.', inputSchema: { type: 'object', properties: { matchId: { type: 'string' }, playerAddress: { type: 'string' } }, required: ['matchId', 'playerAddress'] } },
   { name: 'prep_commit_tx', description: 'Step 3: Submit a hashed secret move to an ACTIVE match. Match status must be ACTIVE.', inputSchema: { type: 'object', properties: { matchId: { type: 'string' }, playerAddress: { type: 'string' }, move: { type: 'number' } }, required: ['matchId', 'playerAddress', 'move'] } },
   { name: 'prep_reveal_tx', description: 'Step 4: Reveal your move after both players have committed. Use the salt from your persistence layer.', inputSchema: { type: 'object', properties: { matchId: { type: 'string' }, move: { type: 'number' }, salt: { type: 'string' }, playerAddress: { type: 'string' } }, required: ['matchId', 'move', 'salt', 'playerAddress'] } },
@@ -380,14 +380,15 @@ export async function handleToolCall(name: string, args: any) {
   }
 
   if (name === 'prep_create_match_tx') {
-    const { stakeUSDC, stakeETH, gameLogicAddress, playerAddress, maxPlayers } = (args || {}) as { stakeUSDC?: number; stakeETH?: number; gameLogicAddress: string; playerAddress: string; maxPlayers?: number };
+    const { stakeUSDC, stakeETH, gameLogicAddress, playerAddress, maxPlayers, winsRequired } = (args || {}) as { stakeUSDC?: number; stakeETH?: number; gameLogicAddress: string; playerAddress: string; maxPlayers?: number; winsRequired?: number };
     
     // Support both field names for backward compatibility, but prefer stakeUSDC
     const amount = stakeUSDC !== undefined ? stakeUSDC : (stakeETH || 0);
     const stakeWei = BigInt(Math.floor(amount * 1e6)); // USDC 6 decimals
     const players = maxPlayers || 2;
+    const wins = winsRequired || 3; // Default to 3 wins for Poker
 
-    return await prepTxWithBuffer('createMatch', [stakeWei, gameLogicAddress as `0x${string}`, players], 0n, playerAddress as `0x${string}`);
+    return await prepTxWithBuffer('createMatch', [stakeWei, gameLogicAddress as `0x${string}`, players, wins], 0n, playerAddress as `0x${string}`);
   }
   if (name === 'prep_commit_tx') {
     const { matchId, playerAddress, move } = (args || {}) as { matchId: string; playerAddress: string; move: number };

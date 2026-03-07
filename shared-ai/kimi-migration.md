@@ -184,3 +184,11 @@
 ---
 
 **Status:** ✅ READY FOR DEPLOYMENT
+
+## ✅ COMPLETED TASKS (V3 TRANSITION)
+- **Phase 1: Smart Contracts**: Deployed `LogicRegistry` and `FiseEscrow` (V3) to Base Sepolia.
+- **USDC Migration**: All protocol logic, events, and tools now use 6-decimal USDC precision.
+- **Multiplayer Array**: Contracts and Indexer now support `address[] players` and `uint8[] wins`.
+- **App Store Activation**: Registered Poker Blitz in the new V3 Registry (`0xa00a...5d61`). 
+- **Dashboard Re-wiring**: Match Feed and Match Detail pages are fully compatible with V3 multiplayer schema.
+- **MCP Hardening**: Server updated with human-readable Markdown and support for V3 ABI.

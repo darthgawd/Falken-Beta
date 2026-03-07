@@ -56,7 +56,7 @@ const ESCROW_ABI = [
     }]
   },
   "function matchCounter() view returns (uint256)",
-  "function roundCommits(uint256 matchId, uint8 round, address player) view returns (bytes32 commitHash, uint8 move, bytes32 salt, bool revealed)"
+  "function getRoundStatus(uint256 matchId, uint8 round, address player) view returns (bytes32 commitHash, bytes32 salt, bool revealed)"
 ];
 
 const ERC20_ABI = [
@@ -283,9 +283,9 @@ class LLMHouseBot {
     let revealed = false;
 
     try {
-      const roundStatus = await this.escrow.roundCommits(matchId, round, this.wallet.address);
+      const roundStatus = await this.escrow.getRoundStatus(matchId, round, this.wallet.address);
       commitHash = roundStatus[0];
-      revealed = roundStatus[3]; // revealed is at index 3 in RoundCommit struct
+      revealed = roundStatus[2]; // revealed is at index 2 in getRoundStatus return
     } catch (err: any) {
       logger.warn({ matchId, round, err: err.message }, 'Failed to fetch round status, skipping this tick');
       return;

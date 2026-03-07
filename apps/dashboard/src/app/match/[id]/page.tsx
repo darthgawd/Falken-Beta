@@ -10,15 +10,13 @@ import { PokerTable } from '@/components/PokerTable';
 
 interface Match {
   match_id: string;
-  player_a: string;
-  player_b: string;
+  players: string[];
   stake_wei: string;
   status: string;
   phase: string;
   current_round: number;
   winner: string;
-  wins_a: number;
-  wins_b: number;
+  wins: number[];
   created_at: string;
   commit_deadline: string;
   reveal_deadline: string;
@@ -291,12 +289,12 @@ export default function MatchDetail({ params }: { params: Promise<{ id: string }
             <div className="p-4 sm:p-10">
               <PokerTable 
                 matchId={match.match_id}
-                playerA={match.player_a}
-                playerB={match.player_b || 'WAITING'}
+                playerA={match.players[0] || 'WAITING'}
+                playerB={match.players[1] || 'WAITING'}
                 round={1}
                 logicId={match.game_logic}
-                playerANickname={nicknames[match.player_a?.toLowerCase()]}
-                playerBNickname={match.player_b ? nicknames[match.player_b?.toLowerCase()] : 'WAITING...'}
+                playerANickname={match.players[0] ? nicknames[match.players[0].toLowerCase()] : 'WAITING...'}
+                playerBNickname={match.players[1] ? nicknames[match.players[1].toLowerCase()] : 'WAITING...'}
                 isShowdown={false}
               />
             </div>
@@ -324,16 +322,16 @@ export default function MatchDetail({ params }: { params: Promise<{ id: string }
                     <div className="p-4 sm:p-10">
                       <PokerTable 
                         matchId={match.match_id}
-                        playerA={match.player_a}
-                        playerB={match.player_b}
+                        playerA={match.players[0] || 'WAITING'}
+                        playerB={match.players[1] || 'WAITING'}
                         round={round.round}
                         logicId={match.game_logic}
                         playerAMove={round.a?.move}
                         playerBMove={round.b?.move}
                         playerASalt={round.a?.salt}
                         playerBSalt={round.b?.salt}
-                        playerANickname={nicknames[match.player_a.toLowerCase()]}
-                        playerBNickname={match.player_b ? nicknames[match.player_b.toLowerCase()] : undefined}
+                        playerANickname={match.players[0] ? nicknames[match.players[0].toLowerCase()] : 'Player A'}
+                        playerBNickname={match.players[1] ? nicknames[match.players[1].toLowerCase()] : undefined}
                         isShowdown={round.a?.revealed && round.b?.revealed}
                         winner={round.winner}
                       />

@@ -62,7 +62,7 @@ contract FiseEscrowTest is Test {
 
     function testCreateMatch() public {
         vm.prank(playerA);
-        escrow.createMatch(STAKE, pokerLogicId, 2);
+        escrow.createMatch(STAKE, pokerLogicId, 2, 3);
 
         FiseEscrow.Match memory m = escrow.getMatch(1);
         assertEq(m.players[0], playerA);
@@ -74,43 +74,43 @@ contract FiseEscrowTest is Test {
     function testCreateMatchWithDifferentPlayerCounts() public {
         // Test 2 players
         vm.prank(playerA);
-        escrow.createMatch(STAKE, pokerLogicId, 2);
+        escrow.createMatch(STAKE, pokerLogicId, 2, 3);
         assertEq(escrow.getMatch(1).maxPlayers, 2);
 
         // Test 3 players
         vm.prank(playerA);
-        escrow.createMatch(STAKE, pokerLogicId, 3);
+        escrow.createMatch(STAKE, pokerLogicId, 3, 3);
         assertEq(escrow.getMatch(2).maxPlayers, 3);
 
         // Test 6 players
         vm.prank(playerA);
-        escrow.createMatch(STAKE, pokerLogicId, 6);
+        escrow.createMatch(STAKE, pokerLogicId, 6, 3);
         assertEq(escrow.getMatch(3).maxPlayers, 6);
     }
 
     function test_RevertCreateMatchWithLessThan2Players() public {
         vm.prank(playerA);
         vm.expectRevert("Minimum 2 players");
-        escrow.createMatch(STAKE, pokerLogicId, 1);
+        escrow.createMatch(STAKE, pokerLogicId, 1, 1);
     }
 
     function test_RevertCreateMatchWithZeroStake() public {
         vm.prank(playerA);
         vm.expectRevert("Stake must be > 0");
-        escrow.createMatch(0, pokerLogicId, 2);
+        escrow.createMatch(0, pokerLogicId, 2, 1);
     }
 
     function test_RevertCreateMatchWithUnregisteredLogic() public {
         bytes32 fakeLogicId = keccak256("fake");
         vm.prank(playerA);
         vm.expectRevert("Logic ID not registered");
-        escrow.createMatch(STAKE, fakeLogicId, 2);
+        escrow.createMatch(STAKE, fakeLogicId, 2, 1);
     }
 
     function testArrayIntegrityFor6Players() public {
         // Create 6-player match
         vm.prank(playerA);
-        escrow.createMatch(STAKE, pokerLogicId, 6);
+        escrow.createMatch(STAKE, pokerLogicId, 6, 3);
 
         FiseEscrow.Match memory m = escrow.getMatch(1);
         
@@ -148,7 +148,7 @@ contract FiseEscrowTest is Test {
     function test_RevertJoinWhenMatchFull() public {
         // Create 3-player match to test "Match full" error
         vm.prank(playerA);
-        escrow.createMatch(STAKE, pokerLogicId, 3);
+        escrow.createMatch(STAKE, pokerLogicId, 3, 3);
 
         vm.prank(playerB);
         escrow.joinMatch(1);
@@ -171,7 +171,7 @@ contract FiseEscrowTest is Test {
 
     function test_RevertJoinTwice() public {
         vm.prank(playerA);
-        escrow.createMatch(STAKE, pokerLogicId, 4);
+        escrow.createMatch(STAKE, pokerLogicId, 4, 3);
 
         vm.prank(playerB);
         escrow.joinMatch(1);
@@ -185,7 +185,7 @@ contract FiseEscrowTest is Test {
 
     function testPhaseTransitions2Players() public {
         vm.prank(playerA);
-        escrow.createMatch(STAKE, pokerLogicId, 2);
+        escrow.createMatch(STAKE, pokerLogicId, 2, 3);
 
         vm.prank(playerB);
         escrow.joinMatch(1);
@@ -218,7 +218,7 @@ contract FiseEscrowTest is Test {
     function testPhaseTransitions4Players() public {
         // Create and fill 4-player match
         vm.prank(playerA);
-        escrow.createMatch(STAKE, pokerLogicId, 4);
+        escrow.createMatch(STAKE, pokerLogicId, 4, 3);
         
         vm.prank(playerB);
         escrow.joinMatch(1);
@@ -244,7 +244,7 @@ contract FiseEscrowTest is Test {
 
     function test_RevertCommitWhenNotParticipant() public {
         vm.prank(playerA);
-        escrow.createMatch(STAKE, pokerLogicId, 2);
+        escrow.createMatch(STAKE, pokerLogicId, 2, 3);
         
         vm.prank(playerB);
         escrow.joinMatch(1);
@@ -258,7 +258,7 @@ contract FiseEscrowTest is Test {
 
     function test_RevertDoubleCommit() public {
         vm.prank(playerA);
-        escrow.createMatch(STAKE, pokerLogicId, 2);
+        escrow.createMatch(STAKE, pokerLogicId, 2, 3);
         
         vm.prank(playerB);
         escrow.joinMatch(1);
@@ -276,7 +276,7 @@ contract FiseEscrowTest is Test {
 
     function test_RevealOnlyAfterAllCommit() public {
         vm.prank(playerA);
-        escrow.createMatch(STAKE, pokerLogicId, 2);
+        escrow.createMatch(STAKE, pokerLogicId, 2, 3);
         
         vm.prank(playerB);
         escrow.joinMatch(1);
@@ -295,7 +295,7 @@ contract FiseEscrowTest is Test {
 
     function testInvalidHashReveal() public {
         vm.prank(playerA);
-        escrow.createMatch(STAKE, pokerLogicId, 2);
+        escrow.createMatch(STAKE, pokerLogicId, 2, 3);
         
         vm.prank(playerB);
         escrow.joinMatch(1);
@@ -346,7 +346,7 @@ contract FiseEscrowTest is Test {
         uint256 initialBalance = usdc.balanceOf(playerA);
         
         vm.prank(playerA);
-        escrow.createMatch(STAKE, pokerLogicId, 2);
+        escrow.createMatch(STAKE, pokerLogicId, 2, 3);
 
         uint256 finalBalance = usdc.balanceOf(playerA);
         assertEq(initialBalance - finalBalance, STAKE);
@@ -355,7 +355,7 @@ contract FiseEscrowTest is Test {
 
     function testStakePullOnJoinMatch() public {
         vm.prank(playerA);
-        escrow.createMatch(STAKE, pokerLogicId, 2);
+        escrow.createMatch(STAKE, pokerLogicId, 2, 3);
 
         uint256 initialBalanceB = usdc.balanceOf(playerB);
         
@@ -519,7 +519,7 @@ contract FiseEscrowTest is Test {
 
     function test_RevertPlaceBetWhenMatchNotActive() public {
         vm.prank(playerA);
-        escrow.createMatch(STAKE, pokerLogicId, 2);
+        escrow.createMatch(STAKE, pokerLogicId, 2, 3);
         // Match is OPEN, not ACTIVE
         
         vm.prank(playerA);
@@ -690,7 +690,7 @@ contract FiseEscrowTest is Test {
 
     function _setupActiveMatch(uint8 numPlayers) internal {
         vm.prank(playerA);
-        escrow.createMatch(STAKE, pokerLogicId, numPlayers);
+        escrow.createMatch(STAKE, pokerLogicId, numPlayers, 3);
 
         if (numPlayers >= 2) {
             vm.prank(playerB);
