@@ -185,6 +185,10 @@ export default function MatchDetail({ params }: { params: Promise<{ id: string }
     return MOVE_LABELS[move] || `MOVE: ${move}`;
   };
 
+  // Calculate real-time scores from rounds
+  const scoreA = Object.values(groupedRounds).filter(r => r.winner === 1).length;
+  const scoreB = Object.values(groupedRounds).filter(r => r.winner === 2).length;
+
   return (
     <main className="min-h-screen bg-black text-zinc-400 font-sans pb-20">
       <Navbar />
@@ -247,7 +251,7 @@ export default function MatchDetail({ params }: { params: Promise<{ id: string }
               <p className="text-xl font-black text-white uppercase tracking-widest truncate max-w-[240px]">
                 {nicknames[match.players[0]?.toLowerCase()] || match.players[0]?.slice(0, 8)}
               </p>
-              <p className="text-6xl font-black text-white mt-4 tabular-nums italic tracking-tighter">{match.wins[0] || 0}</p>
+              <p className="text-6xl font-black text-white mt-4 tabular-nums italic tracking-tighter">{scoreA}</p>
             </div>
           </div>
 
@@ -268,7 +272,7 @@ export default function MatchDetail({ params }: { params: Promise<{ id: string }
                 {match.players[1] && match.players[1] !== '0x0000000000000000000000000000000000000000'
                   ? (nicknames[match.players[1].toLowerCase()] || match.players[1].slice(0, 8)) : 'WAITING...'}
               </p>
-              <p className="text-6xl font-black text-white mt-4 tabular-nums italic tracking-tighter">{match.wins[1] || 0}</p>
+              <p className="text-6xl font-black text-white mt-4 tabular-nums italic tracking-tighter">{scoreB}</p>
             </div>
           </div>
         </div>
