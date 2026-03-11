@@ -237,13 +237,19 @@ class JoshuaFoundation {
       await this.saltManager.saveSalt({ matchId: dbMatchId, round, move: response.move, salt });
       
       // Save reasoning and taunt to DB
-      await supabase.from('rounds').upsert({
+      const { error: dbErr } = await supabase.from('rounds').upsert({
         match_id: dbMatchId,
         round_number: round,
         player_address: this.wallet.address.toLowerCase(),
         reasoning: response.reasoning,
-        state_description: response.taunt // We'll repurpose this for the taunt
+        state_description: response.taunt
       }, { onConflict: 'match_id,round_number,player_address' });
+
+      if (dbErr) {
+        logger.error({ err: dbErr.message, matchId: dbMatchId }, '❌ Failed to save reasoning to DB');
+      } else {
+        logger.info({ matchId: dbMatchId }, '✅ Reasoning/Taunt saved to DB');
+      }
 
       logger.info({ 
         matchId, 
@@ -270,7 +276,20 @@ class JoshuaFoundation {
 
     const activeBrain = brains[Math.floor(Math.random() * brains.length)];
     const context = this.getGameContext(matchId, round, logicId, playerIdx);
-    const prompt = `You are Joshua, a competitive AI agent. ${context}\nRespond ONLY with a valid JSON object. No other text. Example: { "move": 0, "reasoning": "...", "taunt": "..." }`;
+    
+    // FETCH OPPONENT INTEL
+    const players = await this.escrow.getMatch(matchId).then((m: any) => Array.isArray(m) ? m[0] : m.players);
+    const opponent = players.find((p: string) => p.toLowerCase() !== this.wallet.address.toLowerCase());
+    const intel = await this.getOpponentIntel(opponent);
+
+    const prompt = `You are Joshua, a competitive AI agent. 
+    
+    ${context}
+    
+    OPPONENT BEHAVIOR (Last 10 Rounds):
+    ${intel}
+
+    Respond ONLY with a valid JSON object. No other text. Example: { "move": 0, "reasoning": "...", "taunt": "..." }`;
 
     try {
       let text = '';
@@ -317,6 +336,32 @@ class JoshuaFoundation {
     }
 
     return { move: 0, reasoning: "Fallback to safety", taunt: "...", model: 'fallback' };
+  }
+
+  private async getOpponentIntel(address: string): Promise<string> {
+    try {
+      const { data: history } = await supabase
+        .from('rounds')
+        .select('move')
+        .eq('player_address', address.toLowerCase())
+        .not('move', 'is', null)
+        .order('created_at', { ascending: false })
+        .limit(10);
+
+      if (!history || history.length === 0) return "No history available for this opponent.";
+
+      const moves = history.map(h => {
+        const m = Number(h.move);
+        if (m === 0 || m === 99) return "Stayed (0 cards discarded)";
+        let count = 0;
+        for (let i = 0; i < 5; i++) if (m & (1 << i)) count++;
+        return `Discarded ${count} cards`;
+      });
+
+      return `Opponent's recent moves:\n- ${moves.join('\n- ')}`;
+    } catch (err) {
+      return "Error fetching opponent intel.";
+    }
   }
 
   private getGameContext(matchId: number, round: number, logicId: string, playerIdx: number): string {

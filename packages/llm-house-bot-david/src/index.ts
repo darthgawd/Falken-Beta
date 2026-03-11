@@ -210,13 +210,19 @@ class DavidFoundation {
 
       await this.saltManager.saveSalt({ matchId: dbMatchId, round, move: response.move, salt });
       
-      await supabase.from('rounds').upsert({
+      const { error: dbErr } = await supabase.from('rounds').upsert({
         match_id: dbMatchId,
         round_number: round,
         player_address: this.wallet.address.toLowerCase(),
         reasoning: response.reasoning,
         state_description: response.taunt
       }, { onConflict: 'match_id,round_number,player_address' });
+
+      if (dbErr) {
+        logger.error({ err: dbErr.message, matchId: dbMatchId }, '❌ Failed to save reasoning to DB');
+      } else {
+        logger.info({ matchId: dbMatchId }, '✅ Reasoning/Taunt saved to DB');
+      }
 
       logger.info({ matchId, model: response.model, reasoning: response.reasoning, taunt: response.taunt }, '🎲 Committing Move');
       const tx = await this.escrow.commitMove(matchId, hash);
@@ -238,7 +244,20 @@ class DavidFoundation {
 
     const activeBrain = brains[Math.floor(Math.random() * brains.length)];
     const context = this.getGameContext(matchId, round, logicId, playerIdx);
-    const prompt = `You are David, a competitive AI agent. ${context}\nRespond ONLY with a valid JSON object. No other text. Example: { "move": 0, "reasoning": "...", "taunt": "..." }`;
+    
+    // FETCH OPPONENT INTEL
+    const players = await this.escrow.getMatch(matchId).then((m: any) => Array.isArray(m) ? m[0] : m.players);
+    const opponent = players.find((p: string) => p.toLowerCase() !== this.wallet.address.toLowerCase());
+    const intel = await this.getOpponentIntel(opponent);
+
+    const prompt = `You are David, a competitive AI agent. 
+    
+    ${context}
+    
+    OPPONENT BEHAVIOR (Last 10 Rounds):
+    ${intel}
+
+    Respond ONLY with a valid JSON object. No other text. Example: { "move": 0, "reasoning": "...", "taunt": "..." }`;
 
     try {
       let text = '';
@@ -286,13 +305,37 @@ class DavidFoundation {
     return { move: 0, reasoning: "Safety fallback", taunt: "...", model: 'fallback' };
   }
 
+  private async getOpponentIntel(address: string): Promise<string> {
+    try {
+      const { data: history } = await supabase
+        .from('rounds')
+        .select('move')
+        .eq('player_address', address.toLowerCase())
+        .not('move', 'is', null)
+        .order('created_at', { ascending: false })
+        .limit(10);
+
+      if (!history || history.length === 0) return "No history available for this opponent.";
+
+      const moves = history.map(h => {
+        const m = Number(h.move);
+        if (m === 0 || m === 99) return "Stayed (0 cards discarded)";
+        let count = 0;
+        for (let i = 0; i < 5; i++) if (m & (1 << i)) count++;
+        return `Discarded ${count} cards`;
+      });
+
+      return `Opponent's recent moves:\n- ${moves.join('\n- ')}`;
+    } catch (err) {
+      return "Error fetching opponent intel.";
+    }
+  }
+
   private getGameContext(matchId: number, round: number, logicId: string, playerIdx: number): string {
     const pokerId = '0x941e596b0c66e32eb8186fe5c43b990e128b0469bb9fe233512c2ad8a7b254c5';
     
     if (logicId.toLowerCase() === pokerId) {
       // FIXED: Use numerical matchId only (not dbMatchId) to match poker.js seed format
-      // poker.js uses: state.matchId + "_" + move.round
-      // where state.matchId is onChainMatchId.toString() from the VM
       const hand = this.computeHand(matchId.toString(), round, playerIdx);
       const handNames = hand.map((c, i) => `Index ${i}: ${this.cardName(c)}`);
       
@@ -306,8 +349,6 @@ class DavidFoundation {
 
   private computeHand(matchId: string, round: number, playerIndex: number): number[] {
     // FIXED: Match poker.js exactly - uses numerical matchId + "_" + round (case-sensitive)
-    // poker.js: this.generateDeck(state.matchId + "_" + move.round)
-    // where state.matchId comes from VM as onChainMatchId.toString()
     const seedStr = matchId + "_" + round;
     let hash = 0;
     for (let i = 0; i < seedStr.length; i++) {
@@ -320,7 +361,6 @@ class DavidFoundation {
       const j = Math.abs(hash % (i + 1));
       [deck[i], deck[j]] = [deck[j], deck[i]];
     }
-    // poker.js dealing: Player A gets deck[0-4], Player B gets deck[5-9]
     const offset = playerIndex * 5;
     return deck.slice(offset, offset + 5);
   }
