@@ -458,27 +458,27 @@ contract PokerEngine is BaseEscrow {
 
         if (ps.phase == Phase.COMMIT) {
             require(block.timestamp > ps.commitDeadline, "Not timed out");
-            // Claimer must have committed
             require(
                 roundCommits[matchId][m.currentRound][msg.sender].commitHash != bytes32(0),
                 "You did not commit"
             );
+            emit TimeoutClaimed(matchId, msg.sender, claimerIdx);
             _settleMatchSingleWinner(matchId, claimerIdx);
 
         } else if (ps.phase == Phase.BET) {
             require(block.timestamp > ps.betDeadline, "Not timed out");
-            // Current turn player timed out — claimer (who is NOT current turn) wins
             require(!ps.folded[claimerIdx], "You folded");
             require(claimerIdx != _currentTurn[matchId], "You are the one who timed out");
+            emit TimeoutClaimed(matchId, msg.sender, claimerIdx);
             _settleMatchSingleWinner(matchId, claimerIdx);
 
         } else if (ps.phase == Phase.REVEAL) {
             require(block.timestamp > ps.revealDeadline, "Not timed out");
-            // Claimer must have revealed
             require(
                 roundCommits[matchId][m.currentRound][msg.sender].revealed,
                 "You did not reveal"
             );
+            emit TimeoutClaimed(matchId, msg.sender, claimerIdx);
             _settleMatchSingleWinner(matchId, claimerIdx);
         }
     }
