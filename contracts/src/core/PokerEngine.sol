@@ -3,127 +3,113 @@ pragma solidity 0.8.24;
 
 import "./BaseEscrow.sol";
 import "./LogicRegistry.sol";
-import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 /**
  * @title PokerEngine
  * @dev Extension of BaseEscrow for multi-street poker with betting.
- * Supports: 5-Card Draw (1 street), Hold'em/Omaha (4 streets), 7-Card Stud (5 streets)
+ * Supports: 5-Card Draw (1 street), Hold'em/Omaha (4 streets), 7-Card Stud (5 streets).
+ *
+ * ARCHITECTURE:
+ * - Uses _initMatch() for all common setup (stake validation, creator auto-join, etc.)
+ * - Uses _onMatchActivated() hook to set commit deadline when match fills
+ * - Uses _addContribution() on every raise/call for accurate admin refunds
+ * - BaseEscrow's joinMatch handles player joining — NOT overridden here
+ *
+ * PHASE FLOW PER STREET:
+ *   COMMIT → BET → REVEAL → referee advances/resolves
+ *
+ * BETTING:
+ *   - currentBet = bet LEVEL (total each player must have in this street)
+ *   - playersToAct tracks completion: set to activePlayers on BET start,
+ *     decremented on check/call/fold, reset to activePlayers-1 on raise
+ *   - MAX_RAISES = 2 per street (raise + re-raise, then call/fold)
+ *   - maxBuyIn caps total contribution per player (prevents whale attacks)
  */
 contract PokerEngine is BaseEscrow {
     using SafeERC20 for IERC20;
 
     // --- CONSTANTS ---
-    uint8 public constant MAX_RAISES = 2;  // raise + re-raise, then must call/fold
+    uint8 public constant MAX_RAISES = 2;
     uint256 public constant BET_WINDOW = 30 minutes;
     uint256 public constant COMMIT_WINDOW = 30 minutes;
     uint256 public constant REVEAL_WINDOW = 30 minutes;
-
-    // Betting sequence per street:
-    //   Check/Check → next phase
-    //   Raise → opponent must Call/Fold/Re-raise
-    //   Raise → Re-raise → original raiser must Call/Fold (no more raises)
-    //   raiseCount tracks this: 1 after raise, 2 after re-raise, then raise() reverts
 
     // --- ENUMS ---
     enum Phase { COMMIT, BET, REVEAL }
     enum BetStructure { NO_LIMIT, POT_LIMIT, FIXED_LIMIT }
 
-    // --- STATE STRUCTS ---
+    // --- STATE ---
     struct PokerState {
         Phase phase;
+        BetStructure betStructure;  // NO_LIMIT, POT_LIMIT, FIXED_LIMIT
+        uint8 maxStreets;           // from LogicRegistry (1-5)
+        uint8 street;               // current street (0 to maxStreets-1)
+        uint8 activePlayers;        // players who haven't folded
+        uint8 raiseCount;           // raises this street (0 to MAX_RAISES)
+        uint8 playersToAct;         // countdown for betting completion
+        uint256 currentBet;         // bet level this street
+        uint256 maxBuyIn;           // max total contribution per player
         uint256 commitDeadline;
-        uint256 revealDeadline;
         uint256 betDeadline;
-        uint256 currentBet;          // Amount needed to call
-        uint8 currentTurnIndex;      // Whose turn to act
-        uint8 raiseCount;            // Raises this street (0-2)
-        uint8 activePlayers;         // Players who haven't folded
-        uint8 street;                // Current street (0 to maxStreets-1)
-        uint8 maxStreets;            // From logic registry (1-5)
-        BetStructure betStructure;   // NO_LIMIT/POT_LIMIT/FIXED_LIMIT
-        bool[] folded;               // Per player fold status
-        uint256[] playerBets;        // Per player bet this street
-        uint256[] playerBankroll;    // Remaining buy-in per player
+        uint256 revealDeadline;
+        bool[] folded;              // per player fold status (resets each round)
+        uint256[] streetBets;       // per player bet amount this street
     }
 
     struct RoundCommit {
         bytes32 commitHash;
-        bytes32 move;        // bytes32 for complex poker actions
+        bytes32 move;
         bytes32 salt;
         bool revealed;
     }
 
-    // --- STATE VARIABLES ---
     LogicRegistry public immutable LOGIC_REGISTRY;
     address public referee;
 
-    mapping(uint256 => PokerState) public pokerState;
+    mapping(uint256 => PokerState) internal _pokerState;
     mapping(uint256 => mapping(uint8 => mapping(address => RoundCommit))) public roundCommits;
+    // round → commit count
     mapping(uint256 => mapping(uint8 => uint8)) public roundCommitCount;
+    // round → reveal count
     mapping(uint256 => mapping(uint8 => uint8)) public roundRevealCount;
 
     // --- EVENTS ---
     event RefereeChanged(address indexed oldReferee, address indexed newReferee);
-    event StreetAdvanced(uint256 indexed matchId, uint8 newStreet, Phase newPhase);
-    event BetPlaced(uint256 indexed matchId, address indexed player, uint256 amount, uint8 action);
+    event StreetAdvanced(uint256 indexed matchId, uint8 round, uint8 newStreet);
+    event BetPlaced(uint256 indexed matchId, address indexed player, bet_action action, uint256 amount);
     event PlayerFolded(uint256 indexed matchId, address indexed player, uint8 playerIndex);
-    event PotUpdated(uint256 indexed matchId, uint256 totalPot, uint256 streetPot);
     event MoveCommitted(uint256 indexed matchId, uint8 round, address indexed player);
     event MoveRevealed(uint256 indexed matchId, uint8 round, address indexed player, bytes32 move);
-    event SidePotCreated(uint256 indexed matchId, uint256 potIndex, uint256 amount, uint8[] eligiblePlayers);
     event RoundResolved(uint256 indexed matchId, uint8 round, uint8 winnerIndex);
+
+    // Bet action enum for events (matches DB schema)
+    enum bet_action { CHECK, CALL, RAISE, FOLD, ALL_IN }
 
     // --- MODIFIERS ---
     modifier onlyReferee() {
-        require(msg.sender == referee, "Only Referee");
+        require(msg.sender == referee, "Only referee");
         _;
-    }
-
-    // Override joinMatch to update activePlayers
-    function joinMatch(uint256 matchId) external override nonReentrant whenNotPaused {
-        BaseMatch storage m = matches[matchId];
-        require(m.status == MatchStatus.OPEN, "Match not open");
-        require(m.players.length < m.maxPlayers, "Match full");
-        require(!_isPlayer(matchId, msg.sender), "Already joined");
-
-        usdc.safeTransferFrom(msg.sender, address(this), m.stake);
-
-        uint8 playerIndex = uint8(m.players.length);
-        m.players.push(msg.sender);
-        playerContributions[matchId][msg.sender] = m.stake;
-        m.totalPot += m.stake;
-
-        emit PlayerJoined(matchId, msg.sender, playerIndex);
-
-        if (m.players.length == m.maxPlayers) {
-            m.status = MatchStatus.ACTIVE;
-        }
-
-        // Update poker state
-        PokerState storage ps = pokerState[matchId];
-        ps.activePlayers++;
     }
 
     // --- CONSTRUCTOR ---
     constructor(
         address initialTreasury,
         address usdcAddress,
-        address initialLogicRegistry,
+        address logicRegistry,
         address initialReferee
     ) BaseEscrow(initialTreasury, usdcAddress) {
-        require(initialLogicRegistry != address(0), "Invalid registry");
+        require(logicRegistry != address(0), "Invalid registry");
         require(initialReferee != address(0), "Invalid referee");
-        LOGIC_REGISTRY = LogicRegistry(initialLogicRegistry);
+        LOGIC_REGISTRY = LogicRegistry(logicRegistry);
         referee = initialReferee;
     }
-
-
 
     // --- MATCH CREATION ---
 
     /**
-     * @dev Create a poker match with betting configuration.
+     * @dev Create a poker match. Uses _initMatch() for all common setup.
+     * Child adds: poker state, maxStreets from registry, bet structure, maxBuyIn.
+     * NOTE: Child createMatch needs its own nonReentrant + whenNotPaused.
      */
     function createMatch(
         uint256 stake,
@@ -134,70 +120,56 @@ contract PokerEngine is BaseEscrow {
         uint256 maxBuyIn,
         BetStructure betStructure
     ) external nonReentrant whenNotPaused {
-        // Validate logic exists and get config
+        // Validate poker config
+        require(maxBuyIn >= stake, "Max buy-in must cover stake");
+
         LogicRegistry.GameLogic memory logic = LOGIC_REGISTRY.getGameLogic(logicId);
-        require(bytes(logic.ipfsCid).length > 0, "Logic not found");
         require(logic.bettingEnabled, "Game does not support betting");
+        require(logic.maxStreets > 0, "Invalid max streets");
 
-        // Pull stake from creator
-        usdc.safeTransferFrom(msg.sender, address(this), stake);
-
-        // Create base match
-        uint256 matchId = ++matchCounter;
-        BaseMatch storage m = matches[matchId];
-        
-        m.players.push(msg.sender);
-        m.stake = stake;
-        m.logicId = logicId;
-        m.maxPlayers = maxPlayers;
-        m.winsRequired = winsRequired;
-        m.maxRounds = maxRounds;
-        m.currentRound = 1;
-        m.status = MatchStatus.OPEN;
-
-        // Initialize wins array
-        for (uint i = 0; i < maxPlayers; i++) {
-            m.wins.push(0);
-        }
-
-        playerContributions[matchId][msg.sender] = stake;
-        m.totalPot = stake;
+        // BaseEscrow handles: stake validation, creator auto-join, wins array,
+        // matchCounter increment, createdAt, MatchCreated + PlayerJoined events
+        uint256 matchId = _initMatch(stake, logicId, maxPlayers, winsRequired, maxRounds);
 
         // Initialize poker state
-        PokerState storage ps = pokerState[matchId];
+        PokerState storage ps = _pokerState[matchId];
+        ps.betStructure = betStructure;
+        ps.maxStreets = logic.maxStreets;
+        ps.activePlayers = maxPlayers; // correct once match fills
+        ps.maxBuyIn = maxBuyIn;
+        ps.folded = new bool[](maxPlayers);
+        ps.streetBets = new uint256[](maxPlayers);
+        // Phase and deadlines set in _onMatchActivated when match fills
+    }
+
+    /**
+     * @dev Hook called by BaseEscrow.joinMatch when match becomes ACTIVE.
+     * Sets the first commit deadline — game begins.
+     */
+    function _onMatchActivated(uint256 matchId) internal override {
+        PokerState storage ps = _pokerState[matchId];
         ps.phase = Phase.COMMIT;
         ps.commitDeadline = block.timestamp + COMMIT_WINDOW;
-        ps.maxStreets = logic.maxStreets;
-        ps.betStructure = betStructure;
-        ps.activePlayers = 1;
-        
-        // Initialize arrays
-        ps.folded = new bool[](maxPlayers);
-        ps.playerBets = new uint256[](maxPlayers);
-        ps.playerBankroll = new uint256[](maxPlayers);
-
-        // Set bankroll (maxBuyIn minus entry stake)
-        for (uint i = 0; i < maxPlayers; i++) {
-            ps.playerBankroll[i] = maxBuyIn - stake;
-        }
-
-        emit MatchCreated(matchId, msg.sender, stake, logicId, maxPlayers, maxRounds);
     }
 
     // --- COMMIT PHASE ---
 
     function commitMove(uint256 matchId, bytes32 commitHash) external nonReentrant whenNotPaused {
         _requireMatchExists(matchId);
-        PokerState storage ps = pokerState[matchId];
         BaseMatch storage m = matches[matchId];
+        PokerState storage ps = _pokerState[matchId];
 
         require(m.status == MatchStatus.ACTIVE, "Not active");
         require(ps.phase == Phase.COMMIT, "Not commit phase");
-        require(block.timestamp <= ps.commitDeadline, "Commit timeout");
+        require(block.timestamp <= ps.commitDeadline, "Commit timed out");
         require(_isPlayer(matchId, msg.sender), "Not player");
 
         uint8 playerIdx = uint8(_findPlayerIndex(matchId, msg.sender));
-        require(roundCommits[matchId][m.currentRound][msg.sender].commitHash == bytes32(0), "Already committed");
+        require(!ps.folded[playerIdx], "You folded");
+        require(
+            roundCommits[matchId][m.currentRound][msg.sender].commitHash == bytes32(0),
+            "Already committed"
+        );
 
         roundCommits[matchId][m.currentRound][msg.sender] = RoundCommit({
             commitHash: commitHash,
@@ -207,92 +179,101 @@ contract PokerEngine is BaseEscrow {
         });
 
         roundCommitCount[matchId][m.currentRound]++;
-
         emit MoveCommitted(matchId, m.currentRound, msg.sender);
 
-        // If all committed, move to BET phase
+        // All active (non-folded) players committed → advance to BET
         if (roundCommitCount[matchId][m.currentRound] == ps.activePlayers) {
             ps.phase = Phase.BET;
             ps.betDeadline = block.timestamp + BET_WINDOW;
-            ps.currentTurnIndex = 0; // Start with first active player
-            _advanceToNextActivePlayer(matchId); // Skip folded players
+            ps.currentBet = 0;
+            ps.raiseCount = 0;
+            ps.playersToAct = ps.activePlayers;
+            // Find first active player
+            _setTurnToFirstActive(matchId);
         }
     }
 
     // --- BET PHASE ---
 
-    function raise(uint256 matchId, uint256 amount) external nonReentrant whenNotPaused {
+    function raise(uint256 matchId, uint256 raiseAmount) external nonReentrant whenNotPaused {
         _requireMatchExists(matchId);
-        PokerState storage ps = pokerState[matchId];
         BaseMatch storage m = matches[matchId];
+        PokerState storage ps = _pokerState[matchId];
 
         require(m.status == MatchStatus.ACTIVE, "Not active");
         require(ps.phase == Phase.BET, "Not bet phase");
-        require(block.timestamp <= ps.betDeadline, "Bet timeout");
-        require(ps.raiseCount < MAX_RAISES, "Max raises");
+        require(block.timestamp <= ps.betDeadline, "Bet timed out");
+        require(ps.raiseCount < MAX_RAISES, "Max raises reached");
+        require(raiseAmount > 0, "Raise must be > 0");
 
-        uint8 playerIdx = uint8(_findPlayerIndex(matchId, msg.sender));
-        require(playerIdx == ps.currentTurnIndex, "Not your turn");
-        require(!ps.folded[playerIdx], "Already folded");
+        uint8 playerIdx = _requireCurrentTurn(matchId);
 
-        // Enforce bet structure
+        // Enforce bet structure limits
         if (ps.betStructure == BetStructure.FIXED_LIMIT) {
-            require(amount == m.stake, "Fixed: raise must equal stake");
+            require(raiseAmount == m.stake, "Fixed limit: raise must equal stake");
         } else if (ps.betStructure == BetStructure.POT_LIMIT) {
-            uint256 potLimit = m.totalPot + ps.currentBet;
-            require(amount <= potLimit, "Pot limit exceeded");
+            require(raiseAmount <= m.totalPot, "Pot limit exceeded");
         }
-        // NO_LIMIT: any amount up to remaining bankroll
+        // NO_LIMIT: any amount (capped by maxBuyIn below)
 
-        uint256 totalNeeded = ps.currentBet + amount;
-        require(totalNeeded <= ps.playerBankroll[playerIdx], "Insufficient bankroll");
+        // Calculate new bet level and what this player owes
+        uint256 newBetLevel = ps.currentBet + raiseAmount;
+        uint256 amountOwed = newBetLevel - ps.streetBets[playerIdx];
 
-        // Pull USDC
-        usdc.safeTransferFrom(msg.sender, address(this), totalNeeded);
+        // Enforce max buy-in
+        require(
+            playerContributions[matchId][msg.sender] + amountOwed <= ps.maxBuyIn,
+            "Exceeds max buy-in"
+        );
+
+        // Pull USDC and track contribution
+        usdc.safeTransferFrom(msg.sender, address(this), amountOwed);
+        _addContribution(matchId, msg.sender, amountOwed);
 
         // Update state
-        ps.playerBankroll[playerIdx] -= totalNeeded;
-        ps.playerBets[playerIdx] += totalNeeded;
-        m.totalPot += totalNeeded;
-        ps.currentBet = amount;
+        ps.streetBets[playerIdx] = newBetLevel;
+        ps.currentBet = newBetLevel;
         ps.raiseCount++;
 
-        emit BetPlaced(matchId, msg.sender, totalNeeded, 2); // 2 = raise
-        emit PotUpdated(matchId, m.totalPot, _calculateStreetPot(matchId));
+        // Everyone else needs to act again
+        ps.playersToAct = ps.activePlayers - 1;
 
-        // Advance turn
+        emit BetPlaced(matchId, msg.sender, bet_action.RAISE, amountOwed);
+
         _advanceTurn(matchId);
     }
 
     function call(uint256 matchId) external nonReentrant whenNotPaused {
         _requireMatchExists(matchId);
-        PokerState storage ps = pokerState[matchId];
         BaseMatch storage m = matches[matchId];
+        PokerState storage ps = _pokerState[matchId];
 
         require(m.status == MatchStatus.ACTIVE, "Not active");
         require(ps.phase == Phase.BET, "Not bet phase");
-        require(block.timestamp <= ps.betDeadline, "Bet timeout");
+        require(block.timestamp <= ps.betDeadline, "Bet timed out");
 
-        uint8 playerIdx = uint8(_findPlayerIndex(matchId, msg.sender));
-        require(playerIdx == ps.currentTurnIndex, "Not your turn");
-        require(!ps.folded[playerIdx], "Already folded");
-        require(ps.currentBet > 0, "Nothing to call");
+        uint8 playerIdx = _requireCurrentTurn(matchId);
 
-        require(ps.currentBet <= ps.playerBankroll[playerIdx], "Insufficient bankroll");
+        uint256 amountOwed = ps.currentBet - ps.streetBets[playerIdx];
+        require(amountOwed > 0, "Nothing to call");
 
-        usdc.safeTransferFrom(msg.sender, address(this), ps.currentBet);
+        // Enforce max buy-in
+        require(
+            playerContributions[matchId][msg.sender] + amountOwed <= ps.maxBuyIn,
+            "Exceeds max buy-in"
+        );
 
-        ps.playerBankroll[playerIdx] -= ps.currentBet;
-        ps.playerBets[playerIdx] += ps.currentBet;
-        m.totalPot += ps.currentBet;
+        // Pull USDC and track contribution
+        usdc.safeTransferFrom(msg.sender, address(this), amountOwed);
+        _addContribution(matchId, msg.sender, amountOwed);
 
-        emit BetPlaced(matchId, msg.sender, ps.currentBet, 1); // 1 = call
-        emit PotUpdated(matchId, m.totalPot, _calculateStreetPot(matchId));
+        ps.streetBets[playerIdx] = ps.currentBet;
+        ps.playersToAct--;
 
-        // Check if betting round is complete
-        if (_isBettingComplete(matchId)) {
-            ps.phase = Phase.REVEAL;
-            ps.revealDeadline = block.timestamp + REVEAL_WINDOW;
+        emit BetPlaced(matchId, msg.sender, bet_action.CALL, amountOwed);
+
+        if (ps.playersToAct == 0) {
+            _transitionToReveal(matchId);
         } else {
             _advanceTurn(matchId);
         }
@@ -300,23 +281,22 @@ contract PokerEngine is BaseEscrow {
 
     function check(uint256 matchId) external nonReentrant whenNotPaused {
         _requireMatchExists(matchId);
-        PokerState storage ps = pokerState[matchId];
         BaseMatch storage m = matches[matchId];
+        PokerState storage ps = _pokerState[matchId];
 
         require(m.status == MatchStatus.ACTIVE, "Not active");
         require(ps.phase == Phase.BET, "Not bet phase");
-        require(block.timestamp <= ps.betDeadline, "Bet timeout");
+        require(block.timestamp <= ps.betDeadline, "Bet timed out");
 
-        uint8 playerIdx = uint8(_findPlayerIndex(matchId, msg.sender));
-        require(playerIdx == ps.currentTurnIndex, "Not your turn");
-        require(!ps.folded[playerIdx], "Already folded");
-        require(ps.currentBet == 0, "Must call or raise");
+        uint8 playerIdx = _requireCurrentTurn(matchId);
+        require(ps.streetBets[playerIdx] == ps.currentBet, "Must call or raise");
 
-        emit BetPlaced(matchId, msg.sender, 0, 0); // 0 = check
+        ps.playersToAct--;
 
-        if (_isBettingComplete(matchId)) {
-            ps.phase = Phase.REVEAL;
-            ps.revealDeadline = block.timestamp + REVEAL_WINDOW;
+        emit BetPlaced(matchId, msg.sender, bet_action.CHECK, 0);
+
+        if (ps.playersToAct == 0) {
+            _transitionToReveal(matchId);
         } else {
             _advanceTurn(matchId);
         }
@@ -324,31 +304,28 @@ contract PokerEngine is BaseEscrow {
 
     function fold(uint256 matchId) external nonReentrant whenNotPaused {
         _requireMatchExists(matchId);
-        PokerState storage ps = pokerState[matchId];
         BaseMatch storage m = matches[matchId];
+        PokerState storage ps = _pokerState[matchId];
 
         require(m.status == MatchStatus.ACTIVE, "Not active");
         require(ps.phase == Phase.BET, "Not bet phase");
 
-        uint8 playerIdx = uint8(_findPlayerIndex(matchId, msg.sender));
-        require(playerIdx == ps.currentTurnIndex, "Not your turn");
-        require(!ps.folded[playerIdx], "Already folded");
+        uint8 playerIdx = _requireCurrentTurn(matchId);
 
         ps.folded[playerIdx] = true;
         ps.activePlayers--;
+        ps.playersToAct--;
 
         emit PlayerFolded(matchId, msg.sender, playerIdx);
 
-        // If only one player left, they win immediately
+        // Last player standing wins immediately
         if (ps.activePlayers == 1) {
-            uint8 winnerIdx = _findLastActivePlayer(matchId);
-            _settleMatchSingleWinner(matchId, winnerIdx);
+            _settleMatchSingleWinner(matchId, _findLastActivePlayer(matchId));
             return;
         }
 
-        if (_isBettingComplete(matchId)) {
-            ps.phase = Phase.REVEAL;
-            ps.revealDeadline = block.timestamp + REVEAL_WINDOW;
+        if (ps.playersToAct == 0) {
+            _transitionToReveal(matchId);
         } else {
             _advanceTurn(matchId);
         }
@@ -356,24 +333,32 @@ contract PokerEngine is BaseEscrow {
 
     // --- REVEAL PHASE ---
 
-    function revealMove(uint256 matchId, bytes32 move, bytes32 salt) external nonReentrant whenNotPaused {
+    function revealMove(
+        uint256 matchId,
+        bytes32 move,
+        bytes32 salt
+    ) external nonReentrant whenNotPaused {
         _requireMatchExists(matchId);
-        PokerState storage ps = pokerState[matchId];
         BaseMatch storage m = matches[matchId];
+        PokerState storage ps = _pokerState[matchId];
 
         require(m.status == MatchStatus.ACTIVE, "Not active");
         require(ps.phase == Phase.REVEAL, "Not reveal phase");
-        require(block.timestamp <= ps.revealDeadline, "Reveal timeout");
+        require(block.timestamp <= ps.revealDeadline, "Reveal timed out");
         require(_isPlayer(matchId, msg.sender), "Not player");
+
+        uint8 playerIdx = uint8(_findPlayerIndex(matchId, msg.sender));
+        require(!ps.folded[playerIdx], "You folded");
 
         RoundCommit storage rc = roundCommits[matchId][m.currentRound][msg.sender];
         require(rc.commitHash != bytes32(0), "Not committed");
         require(!rc.revealed, "Already revealed");
 
+        // Verify commit hash
         bytes32 expectedHash = keccak256(abi.encodePacked(
             "FALKEN_V4", address(this), matchId, uint256(m.currentRound), msg.sender, move, salt
         ));
-        require(expectedHash == rc.commitHash, "Invalid hash");
+        require(expectedHash == rc.commitHash, "Invalid reveal");
 
         rc.move = move;
         rc.salt = salt;
@@ -385,24 +370,61 @@ contract PokerEngine is BaseEscrow {
 
     // --- REFEREE RESOLUTION ---
 
-    function resolveStreet(uint256 matchId, uint8 streetWinnerIdx) external onlyReferee {
+    /**
+     * @dev Advance to next street within the same round.
+     * Called by referee after intermediate street reveals.
+     */
+    function advanceStreet(uint256 matchId) external onlyReferee nonReentrant {
         _requireMatchExists(matchId);
-        PokerState storage ps = pokerState[matchId];
         BaseMatch storage m = matches[matchId];
+        PokerState storage ps = _pokerState[matchId];
 
         require(m.status == MatchStatus.ACTIVE, "Not active");
-        require(roundRevealCount[matchId][m.currentRound] == ps.activePlayers, "Not all revealed");
-        require(streetWinnerIdx == 255 || !ps.folded[streetWinnerIdx], "Winner folded");
+        require(
+            roundRevealCount[matchId][m.currentRound] == ps.activePlayers,
+            "Not all revealed"
+        );
+        require(ps.street + 1 < ps.maxStreets, "Already on last street");
 
-        if (streetWinnerIdx != 255) {
-            m.wins[streetWinnerIdx]++;
+        // Advance street
+        ps.street++;
+        _resetStreetState(matchId);
+        ps.phase = Phase.COMMIT;
+        ps.commitDeadline = block.timestamp + COMMIT_WINDOW;
+
+        emit StreetAdvanced(matchId, m.currentRound, ps.street);
+    }
+
+    /**
+     * @dev Resolve the current round (poker hand).
+     * Called by referee after the final street's reveals.
+     * @param roundWinnerIdx Player index who won, or 255 for draw.
+     */
+    function resolveRound(uint256 matchId, uint8 roundWinnerIdx) external onlyReferee nonReentrant {
+        _requireMatchExists(matchId);
+        BaseMatch storage m = matches[matchId];
+        PokerState storage ps = _pokerState[matchId];
+
+        require(m.status == MatchStatus.ACTIVE, "Not active");
+        require(
+            roundRevealCount[matchId][m.currentRound] == ps.activePlayers,
+            "Not all revealed"
+        );
+
+        // Update wins
+        if (roundWinnerIdx == 255) {
+            m.drawCounter++;
+        } else {
+            require(roundWinnerIdx < m.players.length, "Invalid winner");
+            require(!ps.folded[roundWinnerIdx], "Winner folded");
+            m.wins[roundWinnerIdx]++;
         }
 
-        emit RoundResolved(matchId, m.currentRound, streetWinnerIdx);
+        emit RoundResolved(matchId, m.currentRound, roundWinnerIdx);
 
-        // Check if match is complete
-        if (streetWinnerIdx != 255 && m.wins[streetWinnerIdx] >= m.winsRequired) {
-            _settleMatchSingleWinner(matchId, streetWinnerIdx);
+        // Check match completion
+        if (roundWinnerIdx != 255 && m.wins[roundWinnerIdx] >= m.winsRequired) {
+            _settleMatchSingleWinner(matchId, roundWinnerIdx);
             return;
         }
 
@@ -411,8 +433,8 @@ contract PokerEngine is BaseEscrow {
             return;
         }
 
-        // Advance to next street
-        _advanceToNextStreet(matchId);
+        // Start next round (new poker hand)
+        _startNextRound(matchId);
     }
 
     // --- ADMIN ---
@@ -423,91 +445,177 @@ contract PokerEngine is BaseEscrow {
         referee = newReferee;
     }
 
-    // --- INTERNAL FUNCTIONS ---
+    // --- TIMEOUT OVERRIDES ---
 
-    function _advanceTurn(uint256 matchId) internal {
-        PokerState storage ps = pokerState[matchId];
+    /**
+     * @dev Claim timeout. The player who did their job wins.
+     * Timeouts always settle the match — no partial continuation.
+     */
+    function _claimTimeout(uint256 matchId) internal override {
         BaseMatch storage m = matches[matchId];
+        PokerState storage ps = _pokerState[matchId];
+        uint8 claimerIdx = uint8(_findPlayerIndex(matchId, msg.sender));
 
-        do {
-            ps.currentTurnIndex = (ps.currentTurnIndex + 1) % uint8(m.players.length);
-        } while (ps.folded[ps.currentTurnIndex]);
+        if (ps.phase == Phase.COMMIT) {
+            require(block.timestamp > ps.commitDeadline, "Not timed out");
+            // Claimer must have committed
+            require(
+                roundCommits[matchId][m.currentRound][msg.sender].commitHash != bytes32(0),
+                "You did not commit"
+            );
+            _settleMatchSingleWinner(matchId, claimerIdx);
 
-        ps.betDeadline = block.timestamp + BET_WINDOW;
-    }
+        } else if (ps.phase == Phase.BET) {
+            require(block.timestamp > ps.betDeadline, "Not timed out");
+            // Current turn player timed out — claimer (who is NOT current turn) wins
+            require(!ps.folded[claimerIdx], "You folded");
+            require(claimerIdx != _currentTurn[matchId], "You are the one who timed out");
+            _settleMatchSingleWinner(matchId, claimerIdx);
 
-    function _advanceToNextActivePlayer(uint256 matchId) internal {
-        PokerState storage ps = pokerState[matchId];
-        BaseMatch storage m = matches[matchId];
-
-        while (ps.folded[ps.currentTurnIndex]) {
-            ps.currentTurnIndex = (ps.currentTurnIndex + 1) % uint8(m.players.length);
+        } else if (ps.phase == Phase.REVEAL) {
+            require(block.timestamp > ps.revealDeadline, "Not timed out");
+            // Claimer must have revealed
+            require(
+                roundCommits[matchId][m.currentRound][msg.sender].revealed,
+                "You did not reveal"
+            );
+            _settleMatchSingleWinner(matchId, claimerIdx);
         }
     }
 
-    function _advanceToNextStreet(uint256 matchId) internal {
-        PokerState storage ps = pokerState[matchId];
+    /**
+     * @dev Mutual timeout. Refunds each player's full contribution minus penalty.
+     * Uses playerContributions (tracks stake + all raises via _addContribution).
+     */
+    function _mutualTimeout(uint256 matchId) internal override {
         BaseMatch storage m = matches[matchId];
+        m.status = MatchStatus.VOIDED;
 
-        // Cleanup current round
         for (uint i = 0; i < m.players.length; i++) {
-            delete roundCommits[matchId][m.currentRound][m.players[i]];
-        }
-        delete roundCommitCount[matchId][m.currentRound];
-        delete roundRevealCount[matchId][m.currentRound];
+            address player = m.players[i];
+            uint256 contrib = playerContributions[matchId][player];
+            if (contrib == 0) continue;
 
-        // Reset betting state
-        ps.currentBet = 0;
-        ps.raiseCount = 0;
-        ps.currentTurnIndex = 0;
-        for (uint i = 0; i < m.players.length; i++) {
-            ps.playerBets[i] = 0;
-        }
+            uint256 penalty = (contrib * MUTUAL_TIMEOUT_PENALTY_BPS) / 10000;
+            uint256 refund = contrib - penalty;
 
-        // Advance street or round
-        if (ps.street + 1 < ps.maxStreets) {
-            ps.street++;
-        } else {
-            ps.street = 0;
-            m.currentRound++;
+            playerContributions[matchId][player] = 0;
+            _safeTransferUSDC(player, refund);
+            _safeTransferUSDC(treasury, penalty);
         }
 
-        ps.phase = Phase.COMMIT;
-        ps.commitDeadline = block.timestamp + COMMIT_WINDOW;
-
-        emit StreetAdvanced(matchId, ps.street, ps.phase);
+        emit MatchVoided(matchId, "Mutual timeout");
     }
 
-    function _isBettingComplete(uint256 matchId) internal view returns (bool) {
-        PokerState storage ps = pokerState[matchId];
-        BaseMatch storage m = matches[matchId];
+    // --- VIEW FUNCTIONS ---
 
-        // Check all active players have acted and bets are equal
-        for (uint i = 0; i < m.players.length; i++) {
+    function getPokerState(uint256 matchId) external view returns (PokerState memory) {
+        return _pokerState[matchId];
+    }
+
+    function isPlayerFolded(uint256 matchId, uint8 playerIndex) external view returns (bool) {
+        PokerState storage ps = _pokerState[matchId];
+        if (playerIndex >= ps.folded.length) return false;
+        return ps.folded[playerIndex];
+    }
+
+    function getPlayerStreetBet(uint256 matchId, uint8 playerIndex) external view returns (uint256) {
+        PokerState storage ps = _pokerState[matchId];
+        if (playerIndex >= ps.streetBets.length) return 0;
+        return ps.streetBets[playerIndex];
+    }
+
+    function getCurrentTurnIndex(uint256 matchId) external view returns (uint8) {
+        return _currentTurn[matchId];
+    }
+
+    // --- INTERNAL HELPERS ---
+
+    // Turn tracking — stored separately since dynamic arrays in struct
+    // can't hold all state cleanly
+    mapping(uint256 => uint8) internal _currentTurn;
+
+    function _requireCurrentTurn(uint256 matchId) internal view returns (uint8) {
+        PokerState storage ps = _pokerState[matchId];
+        uint8 playerIdx = uint8(_findPlayerIndex(matchId, msg.sender));
+        require(!ps.folded[playerIdx], "You folded");
+        require(playerIdx == _currentTurn[matchId], "Not your turn");
+        return playerIdx;
+    }
+
+    function _setTurnToFirstActive(uint256 matchId) internal {
+        PokerState storage ps = _pokerState[matchId];
+        BaseMatch storage m = matches[matchId];
+        for (uint8 i = 0; i < uint8(m.players.length); i++) {
             if (!ps.folded[i]) {
-                if (ps.playerBets[i] < ps.currentBet) {
-                    return false;
-                }
+                _currentTurn[matchId] = i;
+                return;
             }
         }
-        return true;
     }
 
-    function _calculateStreetPot(uint256 matchId) internal view returns (uint256) {
-        PokerState storage ps = pokerState[matchId];
-        uint256 streetPot = 0;
-        for (uint i = 0; i < ps.playerBets.length; i++) {
-            streetPot += ps.playerBets[i];
+    function _advanceTurn(uint256 matchId) internal {
+        PokerState storage ps = _pokerState[matchId];
+        BaseMatch storage m = matches[matchId];
+        uint8 current = _currentTurn[matchId];
+
+        for (uint8 i = 1; i <= uint8(m.players.length); i++) {
+            uint8 next = (current + i) % uint8(m.players.length);
+            if (!ps.folded[next]) {
+                _currentTurn[matchId] = next;
+                ps.betDeadline = block.timestamp + BET_WINDOW;
+                return;
+            }
         }
-        return streetPot;
+    }
+
+    function _transitionToReveal(uint256 matchId) internal {
+        PokerState storage ps = _pokerState[matchId];
+        ps.phase = Phase.REVEAL;
+        ps.revealDeadline = block.timestamp + REVEAL_WINDOW;
+    }
+
+    function _resetStreetState(uint256 matchId) internal {
+        PokerState storage ps = _pokerState[matchId];
+        BaseMatch storage m = matches[matchId];
+
+        ps.currentBet = 0;
+        ps.raiseCount = 0;
+        ps.playersToAct = 0;
+
+        // Reset round commit/reveal tracking for new street
+        // (commits are per-round, but we reuse round number with street tracking)
+        for (uint i = 0; i < m.players.length; i++) {
+            ps.streetBets[i] = 0;
+            delete roundCommits[matchId][m.currentRound][m.players[i]];
+        }
+        roundCommitCount[matchId][m.currentRound] = 0;
+        roundRevealCount[matchId][m.currentRound] = 0;
+    }
+
+    function _startNextRound(uint256 matchId) internal {
+        BaseMatch storage m = matches[matchId];
+        PokerState storage ps = _pokerState[matchId];
+
+        // Reset for next hand
+        m.currentRound++;
+        ps.street = 0;
+        ps.activePlayers = uint8(m.players.length);
+
+        // Reset folds (new hand = everyone back in)
+        for (uint8 i = 0; i < uint8(m.players.length); i++) {
+            ps.folded[i] = false;
+        }
+
+        _resetStreetState(matchId);
+        ps.phase = Phase.COMMIT;
+        ps.commitDeadline = block.timestamp + COMMIT_WINDOW;
     }
 
     function _findLastActivePlayer(uint256 matchId) internal view returns (uint8) {
-        PokerState storage ps = pokerState[matchId];
+        PokerState storage ps = _pokerState[matchId];
         for (uint8 i = 0; i < uint8(ps.folded.length); i++) {
-            if (!ps.folded[i]) {
-                return i;
-            }
+            if (!ps.folded[i]) return i;
         }
         revert("No active players");
     }
@@ -534,52 +642,5 @@ contract PokerEngine is BaseEscrow {
         } else {
             _settleMatchSingleWinner(matchId, winnerIdx);
         }
-    }
-
-    // Override internal timeout functions
-    function _claimTimeout(uint256 matchId) internal override {
-        PokerState storage ps = pokerState[matchId];
-        BaseMatch storage m = matches[matchId];
-
-        if (ps.phase == Phase.COMMIT) {
-            // Last player to commit wins
-            for (uint8 i = 0; i < uint8(m.players.length); i++) {
-                if (roundCommits[matchId][m.currentRound][m.players[i]].commitHash != bytes32(0)) {
-                    _settleMatchSingleWinner(matchId, i);
-                    return;
-                }
-            }
-        } else if (ps.phase == Phase.BET) {
-            // Player who acted last (not current turn) wins
-            uint8 lastActorIdx = (ps.currentTurnIndex + uint8(m.players.length) - 1) % uint8(m.players.length);
-            while (ps.folded[lastActorIdx]) {
-                lastActorIdx = (lastActorIdx + uint8(m.players.length) - 1) % uint8(m.players.length);
-            }
-            _settleMatchSingleWinner(matchId, lastActorIdx);
-        } else if (ps.phase == Phase.REVEAL) {
-            // Last player to reveal wins
-            for (uint8 i = 0; i < uint8(m.players.length); i++) {
-                if (roundCommits[matchId][m.currentRound][m.players[i]].revealed) {
-                    _settleMatchSingleWinner(matchId, i);
-                    return;
-                }
-            }
-        }
-    }
-
-    function _mutualTimeout(uint256 matchId) internal override {
-        BaseMatch storage m = matches[matchId];
-        m.status = MatchStatus.VOIDED;
-
-        uint256 refund = (m.stake * 99) / 100;
-        uint256 penalty = m.stake - refund;
-
-        for (uint i = 0; i < m.players.length; i++) {
-            _safeTransferUSDC(m.players[i], refund);
-        }
-
-        _safeTransferUSDC(treasury, penalty * m.players.length);
-
-        emit MatchVoided(matchId, "Mutual timeout");
     }
 }

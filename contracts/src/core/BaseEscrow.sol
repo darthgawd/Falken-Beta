@@ -147,6 +147,7 @@ abstract contract BaseEscrow is IBaseEscrow, ReentrancyGuard, Ownable2Step, Paus
         if (m.players.length == m.maxPlayers) {
             m.status = MatchStatus.ACTIVE;
             emit MatchActivated(matchId);
+            _onMatchActivated(matchId);
         }
     }
 
@@ -452,6 +453,15 @@ abstract contract BaseEscrow is IBaseEscrow, ReentrancyGuard, Ownable2Step, Paus
     function getMatchWinner(uint256 matchId) external view returns (address) {
         return matches[matchId].winner;
     }
+
+    // --- HOOKS ---
+
+    /**
+     * @dev Called when a match becomes ACTIVE (all players joined).
+     * Child contracts override to initialize game-specific state (deadlines, etc.).
+     * Called inside joinMatch which already has nonReentrant.
+     */
+    function _onMatchActivated(uint256 matchId) internal virtual {}
 
     // --- INTERNAL HELPERS ---
 

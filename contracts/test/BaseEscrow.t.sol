@@ -236,10 +236,30 @@ contract BaseEscrowTest is Test {
     function test_JoinMatch_AlreadyJoined() public {
         vm.prank(player1);
         escrow.createMatch(100 * 1e6, LOGIC_ID, 3, 1, 10);
-        
+
         vm.prank(player1);
         vm.expectRevert("Already joined");
         escrow.joinMatch(1);
+    }
+
+    function test_JoinMatch_Expired() public {
+        // 3-player match stays OPEN after creation
+        vm.prank(player1);
+        escrow.createMatch(100 * 1e6, LOGIC_ID, 3, 1, 10);
+
+        // Warp past JOIN_WINDOW (1 hour)
+        vm.warp(block.timestamp + 2 hours);
+
+        vm.prank(player2);
+        usdc.approve(address(escrow), 100 * 1e6);
+        vm.prank(player2);
+        vm.expectRevert("Match expired");
+        escrow.joinMatch(1);
+    }
+
+    function test_ExecuteTransfer_NotSelf() public {
+        vm.expectRevert("Internal only");
+        escrow.executeTransfer(player1, 100);
     }
 
     // ==================== LEAVE MATCH TESTS ====================
@@ -595,6 +615,12 @@ contract BaseEscrowTest is Test {
         vm.prank(player1);
         vm.expectRevert("No pending withdrawal");
         escrow.withdraw();
+    }
+
+    function test_Withdraw_Success() public {
+        // We need to get funds into pendingWithdrawals.
+        // Use a blocklist USDC to make transfers fail, then withdraw.
+        // This is tested in BaseEscrowPullPaymentTest below.
     }
 
     // ==================== RECEIVE/FALLBACK TESTS ====================
@@ -1098,4 +1124,115 @@ contract BaseEscrowTest is Test {
         assertEq(player2Total, 114 * 1e6);
     }
 
+}
+
+// ==================== PULL-PAYMENT / BLOCKLIST TESTS ====================
+
+import "./mocks/BlocklistMockUSDC.sol";
+
+contract BaseEscrowPullPaymentTest is Test {
+    MockEscrow escrow;
+    BlocklistMockUSDC usdc;
+    address treasury = address(0x123);
+    address player1 = address(0x789);
+    address player2 = address(0xabc);
+
+    bytes32 constant LOGIC_ID = keccak256("test-logic");
+
+    function setUp() public {
+        usdc = new BlocklistMockUSDC();
+        escrow = new MockEscrow(treasury, address(usdc));
+
+        usdc.mint(player1, 10000 * 1e6);
+        usdc.mint(player2, 10000 * 1e6);
+
+        vm.prank(player1);
+        usdc.approve(address(escrow), type(uint256).max);
+        vm.prank(player2);
+        usdc.approve(address(escrow), type(uint256).max);
+    }
+
+    function _createAndFillMatch() internal returns (uint256) {
+        vm.prank(player1);
+        escrow.createMatch(100 * 1e6, LOGIC_ID, 2, 1, 10);
+
+        vm.prank(player2);
+        escrow.joinMatch(1);
+
+        return 1;
+    }
+
+    function test_PullPayment_BlocklistedRecipient() public {
+        uint256 matchId = _createAndFillMatch();
+
+        // Blocklist player1 BEFORE settlement
+        usdc.blocklist(player1);
+
+        // Settle — player1 wins. Direct transfer will fail, should queue withdrawal
+        vm.prank(address(escrow));
+        escrow.testSettleMatchDraw(matchId);
+
+        // player1's funds should be in pendingWithdrawals (transfer failed)
+        uint256 pending = escrow.pendingWithdrawals(player1);
+        assertTrue(pending > 0, "Should have pending withdrawal");
+    }
+
+    function test_Withdraw_AfterUnblocklisted() public {
+        uint256 matchId = _createAndFillMatch();
+
+        // Blocklist player1 before settlement
+        usdc.blocklist(player1);
+
+        // Settle as draw — player1's transfer fails, queued
+        vm.prank(address(escrow));
+        escrow.testSettleMatchDraw(matchId);
+
+        uint256 pending = escrow.pendingWithdrawals(player1);
+        assertTrue(pending > 0, "Should have pending");
+
+        // Un-blocklist player1
+        usdc.unblocklist(player1);
+
+        // Now withdraw succeeds
+        uint256 balBefore = usdc.balanceOf(player1);
+        vm.prank(player1);
+        escrow.withdraw();
+
+        assertEq(escrow.pendingWithdrawals(player1), 0);
+        assertEq(usdc.balanceOf(player1) - balBefore, pending);
+    }
+
+    function test_Withdraw_StillBlocklisted_Reverts() public {
+        uint256 matchId = _createAndFillMatch();
+
+        usdc.blocklist(player2);
+
+        vm.prank(address(escrow));
+        escrow.testSettleMatchDraw(matchId);
+
+        uint256 pending = escrow.pendingWithdrawals(player2);
+        assertTrue(pending > 0, "Should have pending");
+
+        // Withdraw reverts because still blocklisted
+        vm.prank(player2);
+        vm.expectRevert();
+        escrow.withdraw();
+    }
+
+    function test_PullPayment_AdminVoid_BlocklistedPlayer() public {
+        uint256 matchId = _createAndFillMatch();
+
+        // Blocklist player1
+        usdc.blocklist(player1);
+
+        // Admin void — refunds both players
+        escrow.adminVoidMatch(matchId);
+
+        // player1's refund should be in pendingWithdrawals
+        uint256 pending = escrow.pendingWithdrawals(player1);
+        assertTrue(pending > 0, "Blocklisted player should have pending withdrawal after void");
+
+        // player2 got refunded directly
+        assertEq(escrow.pendingWithdrawals(player2), 0);
+    }
 }
