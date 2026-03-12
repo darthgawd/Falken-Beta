@@ -209,11 +209,12 @@ class DavidFoundation {
       );
 
       await this.saltManager.saveSalt({ matchId: dbMatchId, round, move: response.move, salt });
-      
+      // Save reasoning and taunt to DB (Atomic upsert to prevent foreign key errors)
       const { error: dbErr } = await supabase.from('rounds').upsert({
         match_id: dbMatchId,
         round_number: round,
         player_address: this.wallet.address.toLowerCase(),
+        player_index: playerIdx,
         reasoning: response.reasoning,
         state_description: response.taunt
       }, { onConflict: 'match_id,round_number,player_address' });
