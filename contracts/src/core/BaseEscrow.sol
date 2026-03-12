@@ -123,7 +123,7 @@ abstract contract BaseEscrow is IBaseEscrow, ReentrancyGuard, Ownable2Step, Paus
      * @dev Join an existing match that's in OPEN status.
      * Pulls USDC stake from caller. Enforces JOIN_WINDOW expiration.
      */
-    function joinMatch(uint256 matchId) external nonReentrant whenNotPaused {
+    function joinMatch(uint256 matchId) external virtual nonReentrant whenNotPaused {
         _requireMatchExists(matchId);
         BaseMatch storage m = matches[matchId];
 
