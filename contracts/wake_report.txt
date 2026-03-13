@@ -1,0 +1,201 @@
+[20:38:41] Found 7 *.sol files in 0.36 s                           detect.py:729
+[20:38:42] Loaded previous build in 0.72 s                       compiler.py:869
+           Compiled 0 files using 0 solc runs in 0.00 s         compiler.py:1249
+           Processed compilation results in 0.01 s              compiler.py:1502
+
+
+╭─ [MEDIUM][HIGH] Unsafe variant of ERC-20 call [unsafe-erc20-call] ───────────╮
+│   1350                                                                       │
+│   1351     function _safeTransferUSDC(address to, uint256 amount) internal { │
+│   1352         if (amount == 0 || to == address(0)) return;                  │
+│ ❱ 1353         try usdc.transfer(to, amount) returns (bool success) {        │
+│   1354             if (!success) {                                           │
+│   1355                 pendingWithdrawals[to] += amount;                     │
+│   1356                 emit WithdrawalQueued(to, amount);                    │
+╰─ FiseEscrow_Flattened.sol ───────────────────────────────────────────────────╯
+
+
+╭─ [MEDIUM][HIGH] Unsafe variant of ERC-20 call [unsafe-erc20-call] ───────────╮
+│   527      * If transfer fails (e.g., blocklisted recipient), queues funds f │
+│   528      */                                                                │
+│   529     function _safeTransfer(address to, uint256 amount) internal {      │
+│ ❱ 530         try usdc.transfer(to, amount) returns (bool success) {         │
+│   531             if (!success) {                                            │
+│   532                 pendingWithdrawals[to] += amount;                      │
+│   533                 emit WithdrawalQueued(to, amount);                     │
+╰─ src/core/PredictionPool.sol ────────────────────────────────────────────────╯
+
+
+╭─ [WARNING][HIGH] State variable getter does not return all members of a comp─╮
+│   1088     address public treasury;                                          │
+│   1089     IERC20 public immutable usdc;                                     │
+│   1090                                                                       │
+│ ❱ 1091     mapping(uint256 => Match) public matches;                         │
+│   1092     // matchId => round => player => commit                           │
+│   1093     mapping(uint256 => mapping(uint8 => mapping(address => RoundCommi │
+│   1094     // matchId => round => count of reveals                           │
+╰─ FiseEscrow_Flattened.sol ───────────────────────────────────────────────────╯
+├── ╭─ Omitted member ─────────────────────────────────────────────────────────╮
+│   │   1066         bytes32   logicId;         // FISE Logic Identifier       │
+│   │   1067         uint8     maxPlayers;      // Capacity of this match      │
+│   │   1068         uint8     currentRound;                                   │
+│   │ ❱ 1069         uint8[]   wins;            // Score for each player index │
+│   │   1070         uint8     drawCounter;     // Consecutive draw counter fo │
+│   │   1071         uint8     winsRequired;    // Rounds needed to win (1 for │
+│   │   1072         Phase     phase;                                          │
+│   ╰─ FiseEscrow_Flattened.sol ───────────────────────────────────────────────╯
+└── ╭─ Omitted member ─────────────────────────────────────────────────────────╮
+    │   1060     enum Phase { COMMIT, REVEAL }                                 │
+    │   1061                                                                   │
+    │   1062     struct Match {                                                │
+    │ ❱ 1063         address[] players;                                        │
+    │   1064         uint256   stake;           // Initial amount per player ( │
+    │   1065         uint256   totalPot;        // Total pot including additio │
+    │   1066         bytes32   logicId;         // FISE Logic Identifier       │
+    ╰─ FiseEscrow_Flattened.sol ───────────────────────────────────────────────╯
+
+
+╭─ [WARNING][HIGH] State variable getter does not return all members of a comp─╮
+│   39     uint256 public matchCounter;                                        │
+│   40                                                                         │
+│   41     // Match storage                                                    │
+│ ❱ 42     mapping(uint256 => BaseMatch) public matches;                       │
+│   43                                                                         │
+│   44     // Player contributions per match (tracks stake + raises for accura │
+│   45     mapping(uint256 => mapping(address => uint256)) public playerContri │
+╰─ src/core/BaseEscrow.sol ────────────────────────────────────────────────────╯
+├── ╭─ Omitted member ────────────────╮
+│   │   14                            │
+│   │   15     // --- STRUCTS ---     │
+│   │   16     struct BaseMatch {     │
+│   │ ❱ 17         address[] players; │
+│   │   18         uint256 stake;     │
+│   │   19         uint256 totalPot;  │
+│   │   20         bytes32 logicId;   │
+│   ╰─ src/interfaces/IBaseEscrow.sol─╯
+└── ╭─ Omitted member ─────────────────╮
+    │   21         uint8 maxPlayers;   │
+    │   22         uint8 maxRounds;    │
+    │   23         uint8 currentRound; │
+    │ ❱ 24         uint8[] wins;       │
+    │   25         uint8 drawCounter;  │
+    │   26         uint8 winsRequired; │
+    │   27         MatchStatus status; │
+    ╰─ src/interfaces/IBaseEscrow.sol ─╯
+
+
+╭─ [WARNING][HIGH] State variable getter does not return all members of a comp─╮
+│   38     mapping(address => bool) public authorizedEscrows;                  │
+│   39                                                                         │
+│   40     // Pool storage                                                     │
+│ ❱ 41     mapping(uint256 => Pool) public pools;                              │
+│   42                                                                         │
+│   43     // bets[poolId][bettor][outcomeIndex] = amount                      │
+│   44     mapping(uint256 => mapping(address => mapping(uint8 => uint256))) p │
+╰─ src/core/PredictionPool.sol ────────────────────────────────────────────────╯
+├── ╭─ Omitted member ─────────────────────────────────────────────────────────╮
+│   │   60         uint8 winningOutcome;       // which outcome won (set on re │
+│   │   61         bool isDraw;                // if true, all bets refunded   │
+│   │   62         string title;               // prediction title (e.g., "Who │
+│   │ ❱ 63         string[] outcomeLabels;     // human-readable labels for ea │
+│   │   64     }                                                               │
+│   │   65                                                                     │
+│   │   66     // --- EVENTS ---                                               │
+│   ╰─ src/core/PredictionPool.sol ────────────────────────────────────────────╯
+└── ╭─ Omitted member ─────────────────────────────────────────────────────────╮
+    │   55         uint256 matchId;            // which match (0 for standalon │
+    │   56         uint256 bettingDeadline;    // bets close after this timest │
+    │   57         uint256 totalPool;          // all bets combined            │
+    │ ❱ 58         uint256[] outcomeTotals;    // total bet per outcome        │
+    │   59         bool resolved;              // has the pool been settled    │
+    │   60         uint8 winningOutcome;       // which outcome won (set on re │
+    │   61         bool isDraw;                // if true, all bets refunded   │
+    ╰─ src/core/PredictionPool.sol ────────────────────────────────────────────╯
+
+
+╭─ [INFO][HIGH] Unused modifier [unused-modifier] ─────────────────────────────╮
+│   571      * status. Use it only on view functions. For payable or non-payab │
+│   572      * use the standard {nonReentrant} modifier instead.               │
+│   573      */                                                                │
+│ ❱ 574     modifier nonReentrantView() {                                      │
+│   575         _nonReentrantBeforeView();                                     │
+│   576         _;                                                             │
+│   577     }                                                                  │
+╰─ FiseEscrow_Flattened.sol ───────────────────────────────────────────────────╯
+
+
+╭─ [INFO][HIGH] Unused function [unused-function] ─────────────────────────────╮
+│   815     /**                                                                │
+│   816      * @dev Variant of {safeTransfer} that returns a bool instead of r │
+│   817      */                                                                │
+│ ❱ 818     function trySafeTransfer(IERC20 token, address to, uint256 value)  │
+│   819         return _safeTransfer(token, to, value, false);                 │
+│   820     }                                                                  │
+│   821                                                                        │
+╰─ FiseEscrow_Flattened.sol ───────────────────────────────────────────────────╯
+
+
+╭─ [INFO][HIGH] Unused function [unused-function] ─────────────────────────────╮
+│   822     /**                                                                │
+│   823      * @dev Variant of {safeTransferFrom} that returns a bool instead  │
+│   824      */                                                                │
+│ ❱ 825     function trySafeTransferFrom(IERC20 token, address from, address t │
+│   826         return _safeTransferFrom(token, from, to, value, false);       │
+│   827     }                                                                  │
+│   828                                                                        │
+╰─ FiseEscrow_Flattened.sol ───────────────────────────────────────────────────╯
+
+
+╭─ [INFO][HIGH] Unused function [unused-function] ─────────────────────────────╮
+│   835      * this function. Performing a {safeIncreaseAllowance} or {safeDec │
+│   836      * that has a non-zero temporary allowance (for that particular ow │
+│   837      */                                                                │
+│ ❱ 838     function safeIncreaseAllowance(IERC20 token, address spender, uint │
+│   839         uint256 oldAllowance = token.allowance(address(this), spender) │
+│   840         forceApprove(token, spender, oldAllowance + value);            │
+│   841     }                                                                  │
+╰─ FiseEscrow_Flattened.sol ───────────────────────────────────────────────────╯
+
+
+╭─ [INFO][HIGH] Unused function [unused-function] ─────────────────────────────╮
+│   849      * this function. Performing a {safeIncreaseAllowance} or {safeDec │
+│   850      * that has a non-zero temporary allowance (for that particular ow │
+│   851      */                                                                │
+│ ❱ 852     function safeDecreaseAllowance(IERC20 token, address spender, uint │
+│   853         unchecked {                                                    │
+│   854             uint256 currentAllowance = token.allowance(address(this),  │
+│   855             if (currentAllowance < requestedDecrease) {                │
+╰─ FiseEscrow_Flattened.sol ───────────────────────────────────────────────────╯
+
+
+╭─ [INFO][HIGH] Unused function [unused-function] ─────────────────────────────╮
+│   882      *                                                                 │
+│   883      * Reverts if the returned value is other than `true`.             │
+│   884      */                                                                │
+│ ❱ 885     function transferAndCallRelaxed(IERC1363 token, address to, uint25 │
+│   886         if (to.code.length == 0) {                                     │
+│   887             safeTransfer(token, to, value);                            │
+│   888         } else if (!token.transferAndCall(to, value, data)) {          │
+╰─ FiseEscrow_Flattened.sol ───────────────────────────────────────────────────╯
+
+
+╭─ [INFO][HIGH] Unused function [unused-function] ─────────────────╮
+│   897      *                                                     │
+│   898      * Reverts if the returned value is other than `true`. │
+│   899      */                                                    │
+│ ❱ 900     function transferFromAndCallRelaxed(                   │
+│   901         IERC1363 token,                                    │
+│   902         address from,                                      │
+│   903         address to,                                        │
+╰─ FiseEscrow_Flattened.sol ───────────────────────────────────────╯
+
+
+╭─ [INFO][HIGH] Unused function [unused-function] ─────────────────────────────╮
+│   922      *                                                                 │
+│   923      * Reverts if the returned value is other than `true`.             │
+│   924      */                                                                │
+│ ❱ 925     function approveAndCallRelaxed(IERC1363 token, address to, uint256 │
+│   926         if (to.code.length == 0) {                                     │
+│   927             forceApprove(token, to, value);                            │
+│   928         } else if (!token.approveAndCall(to, value, data)) {           │
+╰─ FiseEscrow_Flattened.sol ───────────────────────────────────────────────────╯

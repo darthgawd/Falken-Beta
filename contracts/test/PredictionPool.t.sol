@@ -6,6 +6,7 @@ import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "../src/core/PredictionPool.sol";
 import "../src/core/BaseEscrow.sol";
 import "./mocks/MockUSDC.sol";
+import "./mocks/BlocklistMockUSDC.sol";
 
 // Mock escrow that inherits BaseEscrow for testing match-linked pools
 contract MockEscrowForPredictionPool is BaseEscrow {
@@ -133,7 +134,7 @@ contract PredictionPoolTest is Test {
     function test_Constructor() public view {
         assertEq(pool.treasury(), treasury);
         assertEq(address(pool.usdc()), address(usdc));
-        assertEq(pool.RAKE_BPS(), 500);
+        assertEq(pool.RAKE_BPS(), 750);
         assertEq(pool.MIN_BET(), 100_000);
         assertEq(pool.poolCounter(), 0);
     }
@@ -644,7 +645,7 @@ contract PredictionPoolTest is Test {
         assertEq(p.winningOutcome, 0);
 
         // Check rake was transferred
-        uint256 expectedRake = (100 * 1e6 * 500) / 10000; // 5 USDC
+        uint256 expectedRake = (100 * 1e6 * 750) / 10000; // 7.5 USDC
         assertEq(usdc.balanceOf(treasury) - treasuryBalanceBefore, expectedRake);
     }
 
@@ -761,8 +762,8 @@ contract PredictionPoolTest is Test {
         vm.prank(bettor1);
         pool.claimWinnings(poolId);
 
-        // Winner gets: (100 / 100) * (200 * 0.95) = 190 USDC
-        uint256 expectedPayout = 190 * 1e6;
+        // Winner gets: (100 / 100) * (200 * 0.925) = 185 USDC
+        uint256 expectedPayout = 185 * 1e6;
         assertEq(usdc.balanceOf(bettor1) - balanceBefore, expectedPayout);
     }
 
@@ -793,8 +794,8 @@ contract PredictionPoolTest is Test {
         vm.warp(block.timestamp + 2 hours);
         pool.resolvePoolManual(poolId, 0); // Yes wins
 
-        uint256 rake = (400 * 1e6 * 500) / 10000; // 20 USDC
-        uint256 remainingPool = 400 * 1e6 - rake; // 380 USDC
+        uint256 rake = (400 * 1e6 * 750) / 10000; // 30 USDC
+        uint256 remainingPool = 400 * 1e6 - rake; // 370 USDC
         uint256 winningTotal = 300 * 1e6;
 
         // Bettor1 should get: (100 / 300) * 380 = 126.666... USDC
@@ -963,7 +964,7 @@ contract PredictionPoolTest is Test {
         pool.resolvePoolManual(poolId, 0);
 
         vm.expectEmit(true, true, false, false);
-        emit PredictionPool.WinningsClaimed(poolId, bettor1, 190 * 1e6);
+        emit PredictionPool.WinningsClaimed(poolId, bettor1, 185 * 1e6);
 
         vm.prank(bettor1);
         pool.claimWinnings(poolId);
@@ -1217,9 +1218,9 @@ contract PredictionPoolTest is Test {
         vm.prank(bettor3);
         pool.placeBet(poolId, 1, 100 * 1e6);
 
-        // Total: 300, winningTotal: 200, rake: 15, remaining: 285
-        // bettor1 payout: (100/200) * 285 = 142.5 USDC
-        uint256 expectedPayout = (100 * 1e6 * 285 * 1e6) / (200 * 1e6);
+        // Total: 300, winningTotal: 200, rake: 22.5, remaining: 277.5
+        // bettor1 payout: (100/200) * 277.5 = 138.75 USDC
+        uint256 expectedPayout = (100 * 1e6 * 277_500_000) / (200 * 1e6);
         assertEq(pool.calculatePayout(poolId, bettor1, 0), expectedPayout);
     }
 
@@ -1370,8 +1371,8 @@ contract PredictionPoolTest is Test {
         vm.prank(bettor1);
         pool.claimWinnings(poolId);
 
-        // Gets entire pool minus rake: 100 - 5 = 95
-        assertEq(usdc.balanceOf(bettor1) - balanceBefore, 95 * 1e6);
+        // Gets entire pool minus rake: 100 - 7.5 = 92.5
+        assertEq(usdc.balanceOf(bettor1) - balanceBefore, 92_500_000);
     }
 
     function test_MultipleBetsDifferentOutcomes() public {
@@ -1405,9 +1406,9 @@ contract PredictionPoolTest is Test {
         vm.prank(bettor1);
         pool.claimWinnings(poolId);
 
-        // Total pool: 200, winning total: 150, rake: 10, remaining: 190
-        // bettor1 B payout: (50/150) * 190 = 63.33...
-        uint256 expectedPayout = uint256(50 * 1e6) * uint256(190 * 1e6) / uint256(150 * 1e6);
+        // Total pool: 200, winning total: 150, rake: 15, remaining: 185
+        // bettor1 B payout: (50/150) * 185 = 61.666...
+        uint256 expectedPayout = uint256(50 * 1e6) * uint256(185 * 1e6) / uint256(150 * 1e6);
         assertEq(usdc.balanceOf(bettor1) - balanceBefore, expectedPayout);
     }
 
@@ -1468,7 +1469,7 @@ contract PredictionPoolTest is Test {
 
         // Verify rake transferred
         uint256 totalPool = 300 * 1e6;
-        uint256 expectedRake = (totalPool * 500) / 10000; // 15 USDC
+        uint256 expectedRake = (totalPool * 750) / 10000; // 22.5 USDC
         assertEq(usdc.balanceOf(treasury) - treasuryBefore, expectedRake);
 
         // 7. Bettor 1 claims winnings
@@ -1477,8 +1478,8 @@ contract PredictionPoolTest is Test {
         pool.claimWinnings(poolId);
 
         // Winning total is 100, bettor1 gets entire winning pool after rake
-        // payout = (100 / 100) * (300 - 15) = 285 USDC
-        assertEq(usdc.balanceOf(bettor1) - bettor1BalanceBefore, 285 * 1e6);
+        // payout = (100 / 100) * (300 - 22.5) = 277.5 USDC
+        assertEq(usdc.balanceOf(bettor1) - bettor1BalanceBefore, 277_500_000);
     }
 
     function test_FullFlow_Standalone() public {
@@ -1508,22 +1509,18 @@ contract PredictionPoolTest is Test {
         pool.resolvePoolManual(poolId, 0); // Joshua wins
 
         // 4. Bettors claim
-        uint256 winningTotal = 1000 * 1e6;
-        uint256 totalPool = 2000 * 1e6;
-        uint256 rake = (totalPool * 500) / 10000; // 100 USDC
-        uint256 remainingPool = totalPool - rake; // 1900 USDC
-
-        // Bettor1 gets: (500/1000) * 1900 = 950 USDC
+        // rake = 2000e6 * 7.5% = 150 USDC, remaining = 1850 USDC
+        // Bettor1 gets: (500/1000) * 1850 = 925 USDC
         uint256 bettor1Before = usdc.balanceOf(bettor1);
         vm.prank(bettor1);
         pool.claimWinnings(poolId);
-        assertEq(usdc.balanceOf(bettor1) - bettor1Before, 950 * 1e6);
+        assertEq(usdc.balanceOf(bettor1) - bettor1Before, 925 * 1e6);
 
-        // Bettor2 gets: (500/1000) * 1900 = 950 USDC
+        // Bettor2 gets: (500/1000) * 1850 = 925 USDC
         uint256 bettor2Before = usdc.balanceOf(bettor2);
         vm.prank(bettor2);
         pool.claimWinnings(poolId);
-        assertEq(usdc.balanceOf(bettor2) - bettor2Before, 950 * 1e6);
+        assertEq(usdc.balanceOf(bettor2) - bettor2Before, 925 * 1e6);
 
         // Loser gets nothing
         vm.prank(bettor3);
@@ -1612,5 +1609,224 @@ contract PredictionPoolTest is Test {
         vm.prank(bettor2);
         pool.claimWinnings(poolId);
         assertEq(usdc.balanceOf(bettor2) - b2Before, 200 * 1e6);
+    }
+
+    // --- WITHDRAW (nothing queued) ---
+
+    function test_Withdraw_NothingToWithdraw() public {
+        vm.prank(bettor1);
+        vm.expectRevert("Nothing to withdraw");
+        pool.withdraw();
+    }
+
+    // --- MULTI-OUTCOME BETTOR IN WIN SCENARIO ---
+
+    function test_BettorBetsMultipleOutcomes_WinScenario() public {
+        // bettor1 bets on BOTH outcomes (hedging)
+        // bettor2 bets only on outcome 0
+        string[] memory outcomes = new string[](2);
+        outcomes[0] = "A";
+        outcomes[1] = "B";
+        uint256 poolId = pool.createPool(
+            address(0),
+            0,
+            block.timestamp + 1 hours,
+            "Standalone",
+            outcomes
+        );
+
+        // bettor1 bets 100 on outcome 0 and 50 on outcome 1
+        vm.prank(bettor1);
+        pool.placeBet(poolId, 0, 100 * 1e6);
+        vm.prank(bettor1);
+        pool.placeBet(poolId, 1, 50 * 1e6);
+
+        // bettor2 bets 100 on outcome 0
+        vm.prank(bettor2);
+        pool.placeBet(poolId, 0, 100 * 1e6);
+
+        // totalPool = 250e6, outcomeTotals[0] = 200e6, outcomeTotals[1] = 50e6
+
+        vm.warp(block.timestamp + 2 hours);
+        pool.resolvePoolManual(poolId, 0); // outcome 0 wins
+
+        // bettor1 should only collect their outcome 0 bet
+        // rake = 250e6 * 750 / 10000 = 18_750_000
+        // remaining = 250e6 - 18_750_000 = 231_250_000
+        // bettor1 payout = (100e6 / 200e6) * 231_250_000 = 115_625_000
+        uint256 b1Before = usdc.balanceOf(bettor1);
+        vm.prank(bettor1);
+        pool.claimWinnings(poolId);
+        assertEq(usdc.balanceOf(bettor1) - b1Before, 115_625_000);
+
+        // bettor2 payout = (100e6 / 200e6) * 231_250_000 = 115_625_000
+        uint256 b2Before = usdc.balanceOf(bettor2);
+        vm.prank(bettor2);
+        pool.claimWinnings(poolId);
+        assertEq(usdc.balanceOf(bettor2) - b2Before, 115_625_000);
+
+        // bettor1's losing bet on outcome 1 (50e6) is NOT refunded — correct parimutuel behavior
+        // bettor1 cannot claim again
+        vm.prank(bettor1);
+        vm.expectRevert("Already claimed");
+        pool.claimWinnings(poolId);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Pull-payment tests using BlocklistMockUSDC
+// ---------------------------------------------------------------------------
+
+contract PredictionPoolPullPaymentTest is Test {
+    PredictionPool pool;
+    BlocklistMockUSDC usdc;
+
+    address treasury = address(0x123);
+    address bettor1  = address(0x456);
+    address bettor2  = address(0x789);
+
+    function setUp() public {
+        usdc = new BlocklistMockUSDC();
+        pool = new PredictionPool(treasury, address(usdc));
+
+        usdc.mint(bettor1, 10_000 * 1e6);
+        usdc.mint(bettor2, 10_000 * 1e6);
+
+        vm.prank(bettor1);
+        usdc.approve(address(pool), type(uint256).max);
+        vm.prank(bettor2);
+        usdc.approve(address(pool), type(uint256).max);
+    }
+
+    // Helper: create a simple standalone 2-outcome pool with bettingDeadline 1 hour out
+    function _createPool() internal returns (uint256 poolId) {
+        string[] memory outcomes = new string[](2);
+        outcomes[0] = "A";
+        outcomes[1] = "B";
+        poolId = pool.createPool(address(0), 0, block.timestamp + 1 hours, "Test", outcomes);
+    }
+
+    function test_PullPayment_BlocklistedWinner() public {
+        uint256 poolId = _createPool();
+
+        // bettor1 bets on outcome 0, bettor2 on outcome 1
+        vm.prank(bettor1);
+        pool.placeBet(poolId, 0, 200 * 1e6);
+        vm.prank(bettor2);
+        pool.placeBet(poolId, 1, 200 * 1e6);
+
+        vm.warp(block.timestamp + 2 hours);
+        pool.resolvePoolManual(poolId, 0); // outcome 0 wins
+
+        // Blocklist bettor1 before they claim
+        usdc.blocklist(bettor1);
+
+        // claimWinnings should succeed (not revert) but queue the payout
+        vm.prank(bettor1);
+        pool.claimWinnings(poolId);
+
+        uint256 pending = pool.pendingWithdrawals(bettor1);
+        assertTrue(pending > 0, "Should have pending withdrawal");
+        // rake = 400e6 * 750 / 10000 = 30e6, remaining = 370e6 — all to bettor1
+        assertEq(pending, 370 * 1e6);
+    }
+
+    function test_Withdraw_AfterUnblocklisted() public {
+        uint256 poolId = _createPool();
+
+        vm.prank(bettor1);
+        pool.placeBet(poolId, 0, 200 * 1e6);
+        vm.prank(bettor2);
+        pool.placeBet(poolId, 1, 200 * 1e6);
+
+        vm.warp(block.timestamp + 2 hours);
+        pool.resolvePoolManual(poolId, 0);
+
+        usdc.blocklist(bettor1);
+
+        vm.prank(bettor1);
+        pool.claimWinnings(poolId);
+
+        uint256 pending = pool.pendingWithdrawals(bettor1);
+        assertTrue(pending > 0);
+
+        // Un-blocklist and withdraw
+        usdc.unblocklist(bettor1);
+
+        uint256 balBefore = usdc.balanceOf(bettor1);
+        vm.prank(bettor1);
+        pool.withdraw();
+
+        assertEq(pool.pendingWithdrawals(bettor1), 0);
+        assertEq(usdc.balanceOf(bettor1) - balBefore, pending);
+    }
+
+    function test_PullPayment_BlocklistedDraw() public {
+        uint256 poolId = _createPool();
+
+        vm.prank(bettor1);
+        pool.placeBet(poolId, 0, 150 * 1e6);
+        vm.prank(bettor2);
+        pool.placeBet(poolId, 1, 100 * 1e6);
+
+        vm.warp(block.timestamp + 2 hours);
+        pool.resolvePoolDraw(poolId);
+
+        // Blocklist bettor1 before refund
+        usdc.blocklist(bettor1);
+
+        vm.prank(bettor1);
+        pool.claimWinnings(poolId); // should not revert
+
+        // Full refund queued (no rake on draw)
+        assertEq(pool.pendingWithdrawals(bettor1), 150 * 1e6);
+
+        // bettor2 (not blocklisted) gets direct refund
+        uint256 b2Before = usdc.balanceOf(bettor2);
+        vm.prank(bettor2);
+        pool.claimWinnings(poolId);
+        assertEq(usdc.balanceOf(bettor2) - b2Before, 100 * 1e6);
+    }
+
+    function test_WithdrawalQueued_Event() public {
+        uint256 poolId = _createPool();
+
+        vm.prank(bettor1);
+        pool.placeBet(poolId, 0, 200 * 1e6);
+        vm.prank(bettor2);
+        pool.placeBet(poolId, 1, 200 * 1e6);
+
+        vm.warp(block.timestamp + 2 hours);
+        pool.resolvePoolManual(poolId, 0);
+
+        usdc.blocklist(bettor1);
+
+        vm.expectEmit(true, false, false, true);
+        emit PredictionPool.WithdrawalQueued(bettor1, 370 * 1e6);
+        vm.prank(bettor1);
+        pool.claimWinnings(poolId);
+    }
+
+    function test_Withdrawn_Event() public {
+        uint256 poolId = _createPool();
+
+        vm.prank(bettor1);
+        pool.placeBet(poolId, 0, 200 * 1e6);
+        vm.prank(bettor2);
+        pool.placeBet(poolId, 1, 200 * 1e6);
+
+        vm.warp(block.timestamp + 2 hours);
+        pool.resolvePoolManual(poolId, 0);
+
+        usdc.blocklist(bettor1);
+        vm.prank(bettor1);
+        pool.claimWinnings(poolId);
+
+        usdc.unblocklist(bettor1);
+
+        vm.expectEmit(true, false, false, true);
+        emit PredictionPool.Withdrawn(bettor1, 370 * 1e6);
+        vm.prank(bettor1);
+        pool.withdraw();
     }
 }

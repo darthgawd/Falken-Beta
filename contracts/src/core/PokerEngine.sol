@@ -104,6 +104,17 @@ contract PokerEngine is BaseEscrow {
         referee = initialReferee;
     }
 
+    // --- DEV ROYALTY HOOK ---
+
+    function _getLogicDeveloper(bytes32 logicId) internal virtual override returns (address) {
+        return LOGIC_REGISTRY.getDeveloper(logicId);
+    }
+
+    function _recordVolume(bytes32 logicId, uint256 amount) internal virtual override {
+        // Best-effort — never revert settlement if registry call fails
+        try LOGIC_REGISTRY.recordVolume(logicId, amount) {} catch {}
+    }
+
     // --- MATCH CREATION ---
 
     /**
@@ -435,6 +446,37 @@ contract PokerEngine is BaseEscrow {
 
         // Start next round (new poker hand)
         _startNextRound(matchId);
+    }
+
+    /**
+     * @dev Resolve the current round with a split pot.
+     * Called by referee when pot must be divided between multiple winners (e.g., Omaha Hi-Lo, tie hands).
+     * Settles the match immediately — does not continue to next round.
+     */
+    function resolveRoundSplit(
+        uint256 matchId,
+        IBaseEscrow.Resolution calldata res
+    ) external onlyReferee nonReentrant {
+        _requireMatchExists(matchId);
+        BaseMatch storage m = matches[matchId];
+        PokerState storage ps = _pokerState[matchId];
+
+        require(m.status == MatchStatus.ACTIVE, "Not active");
+        require(
+            roundRevealCount[matchId][m.currentRound] == ps.activePlayers,
+            "Not all revealed"
+        );
+        require(res.winnerIndices.length >= 2, "Use resolveRound for single winner");
+
+        // Validate no folded winners
+        for (uint i = 0; i < res.winnerIndices.length; i++) {
+            require(res.winnerIndices[i] < m.players.length, "Invalid winner index");
+            require(!ps.folded[res.winnerIndices[i]], "Winner folded");
+        }
+
+        emit RoundResolved(matchId, m.currentRound, 255); // 255 = draw/split
+
+        _settleMatch(matchId, res);
     }
 
     // --- ADMIN ---

@@ -27,7 +27,8 @@ abstract contract BaseEscrow is IBaseEscrow, ReentrancyGuard, Ownable2Step, Paus
     using SafeERC20 for IERC20;
 
     // --- CONSTANTS ---
-    uint256 public constant RAKE_BPS = 500; // 5% total rake
+    uint256 public constant RAKE_BPS = 750;         // 7.5% total rake (5% protocol + 2.5% developer)
+    uint256 public constant DEV_ROYALTY_BPS = 250;  // 2.5% of pot to game developer
     uint256 public constant MUTUAL_TIMEOUT_PENALTY_BPS = 100; // 1% penalty
     uint256 public constant JOIN_WINDOW = 1 hours; // Time to join after creation
     uint256 public constant MIN_STAKE = 100_000; // 0.10 USDC (6 decimals)
@@ -68,6 +69,22 @@ abstract contract BaseEscrow is IBaseEscrow, ReentrancyGuard, Ownable2Step, Paus
      */
     function _mutualTimeout(uint256 matchId) internal virtual;
 
+    /**
+     * @dev Returns the developer address for a given logicId.
+     * Override in child contracts to look up from LogicRegistry.
+     * Returns address(0) if no registry is configured — dev royalty falls back to treasury.
+     */
+    function _getLogicDeveloper(bytes32 /*logicId*/) internal virtual returns (address) {
+        return address(0);
+    }
+
+    /**
+     * @dev Records volume for a settled match in the LogicRegistry.
+     * Override in child contracts that have a registry reference.
+     * No-op by default — missing registry never reverts settlement.
+     */
+    function _recordVolume(bytes32 /*logicId*/, uint256 /*amount*/) internal virtual {}
+
     // --- MATCH INITIALIZATION ---
 
     /**
@@ -85,7 +102,7 @@ abstract contract BaseEscrow is IBaseEscrow, ReentrancyGuard, Ownable2Step, Paus
         uint8 maxRounds
     ) internal returns (uint256 matchId) {
         require(stake >= MIN_STAKE, "Stake below minimum");
-        require(maxPlayers >= 2, "Need at least 2 players");
+        require(maxPlayers >= 2 && maxPlayers <= 6, "Players must be 2-6");
         require(winsRequired > 0, "Wins required must be > 0");
         require(maxRounds >= winsRequired, "Max rounds must be >= wins required");
 
@@ -264,12 +281,19 @@ abstract contract BaseEscrow is IBaseEscrow, ReentrancyGuard, Ownable2Step, Paus
 
         m.status = MatchStatus.SETTLED;
 
-        // Calculate rake
+        // Calculate rake split: 2.5% to developer, 5% to protocol treasury
         uint256 totalRake = (m.totalPot * RAKE_BPS) / 10000;
+        uint256 devRoyalty = (m.totalPot * DEV_ROYALTY_BPS) / 10000;
+        uint256 protocolRake = totalRake - devRoyalty;
         uint256 remainingPot = m.totalPot - totalRake;
 
-        // Transfer rake to treasury
-        _safeTransferUSDC(treasury, totalRake);
+        address dev = _getLogicDeveloper(m.logicId);
+        if (dev != address(0)) {
+            _safeTransferUSDC(dev, devRoyalty);
+        } else {
+            protocolRake += devRoyalty; // no developer registered, all to treasury
+        }
+        _safeTransferUSDC(treasury, protocolRake);
 
         // Distribute to winners
         require(res.winnerIndices.length > 0, "No winners");
@@ -304,6 +328,7 @@ abstract contract BaseEscrow is IBaseEscrow, ReentrancyGuard, Ownable2Step, Paus
         }
 
         emit MatchSettled(matchId, res.winnerIndices, remainingPot, totalRake);
+        _recordVolume(m.logicId, m.totalPot);
     }
 
     /**
@@ -334,7 +359,16 @@ abstract contract BaseEscrow is IBaseEscrow, ReentrancyGuard, Ownable2Step, Paus
         m.status = MatchStatus.SETTLED;
 
         uint256 totalRake = (m.totalPot * RAKE_BPS) / 10000;
-        _safeTransferUSDC(treasury, totalRake);
+        uint256 devRoyalty = (m.totalPot * DEV_ROYALTY_BPS) / 10000;
+        uint256 protocolRake = totalRake - devRoyalty;
+
+        address dev = _getLogicDeveloper(m.logicId);
+        if (dev != address(0)) {
+            _safeTransferUSDC(dev, devRoyalty);
+        } else {
+            protocolRake += devRoyalty;
+        }
+        _safeTransferUSDC(treasury, protocolRake);
 
         // Split remaining equally among all players
         uint256 remainingPot = m.totalPot - totalRake;
@@ -353,6 +387,7 @@ abstract contract BaseEscrow is IBaseEscrow, ReentrancyGuard, Ownable2Step, Paus
         }
 
         emit MatchSettled(matchId, new uint8[](0), remainingPot, totalRake);
+        _recordVolume(m.logicId, m.totalPot);
     }
 
     /**

@@ -103,7 +103,7 @@ contract BaseEscrowTest is Test {
     function test_Constructor() public view {
         assertEq(escrow.treasury(), treasury);
         assertEq(address(escrow.usdc()), address(usdc));
-        assertEq(escrow.RAKE_BPS(), 500);
+        assertEq(escrow.RAKE_BPS(), 750);
         assertEq(escrow.matchCounter(), 0);
     }
 
@@ -169,8 +169,14 @@ contract BaseEscrowTest is Test {
 
     function test_CreateMatch_LessThanMinPlayers() public {
         vm.prank(player1);
-        vm.expectRevert("Need at least 2 players");
+        vm.expectRevert("Players must be 2-6");
         escrow.createMatch(100 * 1e6, LOGIC_ID, 1, 1, 10);
+    }
+
+    function test_CreateMatch_MoreThanMaxPlayers() public {
+        vm.prank(player1);
+        vm.expectRevert("Players must be 2-6");
+        escrow.createMatch(100 * 1e6, LOGIC_ID, 7, 1, 10);
     }
 
     // ==================== JOIN MATCH TESTS ====================
@@ -354,17 +360,17 @@ contract BaseEscrowTest is Test {
         assertEq(uint8(m.status), uint8(IBaseEscrow.MatchStatus.SETTLED));
         assertEq(m.winner, player1);
         
-        // Check rake (5% of 200 = 10) - either direct or queued
+        // Check rake (7.5% of 200 = 15) - either direct or queued
         uint256 treasuryAfter = usdc.balanceOf(treasury);
         uint256 treasuryWithdrawalAfter = escrow.pendingWithdrawals(treasury);
         uint256 treasuryTotal = (treasuryAfter - treasuryBefore) + (treasuryWithdrawalAfter - treasuryWithdrawalBefore);
-        assertEq(treasuryTotal, 10 * 1e6);
-        
-        // Check winner got remainder (190) - either direct or queued
+        assertEq(treasuryTotal, 15 * 1e6);
+
+        // Check winner got remainder (185) - either direct or queued
         uint256 player1After = usdc.balanceOf(player1);
         uint256 player1WithdrawalAfter = escrow.pendingWithdrawals(player1);
         uint256 player1Total = (player1After - player1Before) + (player1WithdrawalAfter - player1WithdrawalBefore);
-        assertEq(player1Total, 190 * 1e6);
+        assertEq(player1Total, 185 * 1e6);
     }
 
     function test_SettleMatch_Draw() public {
@@ -533,11 +539,7 @@ contract BaseEscrowTest is Test {
         vm.prank(player2);
         escrow.joinMatch(1);
         
-        // Total pot = 2 USDC, rake = 0.1 USDC (rounded to 0 due to integer math?)
-        // Actually: (2 * 500) / 10000 = 0.1 = 0 (integer division)
-        
-        uint256 player1Before = usdc.balanceOf(player1);
-        uint256 player2Before = usdc.balanceOf(player2);
+        // Total pot = 2 USDC (2_000_000 units), rake = 7.5% = 150_000 units = 0.15 USDC
         
         escrow.testSettleMatchDraw(1);
         
@@ -628,7 +630,7 @@ contract BaseEscrowTest is Test {
     function test_Receive_ETH() public {
         vm.expectRevert();
         (bool success,) = address(escrow).call{value: 1 ether}("");
-        // Silence unused variable warning
+        (success); // silence unused variable warning — return value irrelevant when testing revert
     }
 
     // ==================== EDGE CASE TESTS ====================
@@ -824,7 +826,7 @@ contract BaseEscrowTest is Test {
         assertEq(m.players[0], player1);
     }
 
-    function test_MatchNotExist_View() public {
+    function test_MatchNotExist_View() public view {
         // getMatch returns empty struct for non-existent match (no revert)
         IBaseEscrow.BaseMatch memory m = escrow.getMatch(999);
         assertEq(m.players.length, 0);
@@ -897,7 +899,7 @@ contract BaseEscrowTest is Test {
         escrow.testInitMatch(0, LOGIC_ID, 2, 1, 10);
         
         // Less than min players
-        vm.expectRevert("Need at least 2 players");
+        vm.expectRevert("Players must be 2-6");
         escrow.testInitMatch(100 * 1e6, LOGIC_ID, 1, 1, 10);
         
         // Zero wins required
@@ -946,9 +948,9 @@ contract BaseEscrowTest is Test {
         uint256 player2Total = (usdc.balanceOf(player2) - player2Before) + (escrow.pendingWithdrawals(player2) - player2WithdrawalBefore);
         
         // Each gets half of pot minus rake
-        // 200 total, 10 rake, 190 split = 95 each
-        assertEq(player1Total, 95 * 1e6);
-        assertEq(player2Total, 95 * 1e6);
+        // 200 total, 15 rake, 185 split = 92.5 each
+        assertEq(player1Total, 92_500_000);
+        assertEq(player2Total, 92_500_000);
     }
 
     // ==================== BRANCH COVERAGE: REQUIRE STATEMENTS ====================
@@ -1114,14 +1116,14 @@ contract BaseEscrowTest is Test {
         IBaseEscrow.BaseMatch memory m = escrow.getMatch(1);
         assertEq(uint8(m.status), uint8(IBaseEscrow.MatchStatus.SETTLED));
         
-        // Check distributions (300 total, 15 rake, 285 split)
-        // player1: 285 * 60% = 171
-        // player2: 285 * 40% = 114
+        // Check distributions (300 total, 22.5 rake, 277.5 split)
+        // player1: 277.5 * 60% = 166.5 USDC
+        // player2: 277.5 * 40% = 111 USDC (gets remainder dust)
         uint256 player1Total = (usdc.balanceOf(player1) - player1Before) + (escrow.pendingWithdrawals(player1) - player1WithdrawalBefore);
         uint256 player2Total = (usdc.balanceOf(player2) - player2Before) + (escrow.pendingWithdrawals(player2) - player2WithdrawalBefore);
-        
-        assertEq(player1Total, 171 * 1e6);
-        assertEq(player2Total, 114 * 1e6);
+
+        assertEq(player1Total, 166_500_000);
+        assertEq(player2Total, 111 * 1e6);
     }
 
 }

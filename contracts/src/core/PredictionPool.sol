@@ -25,7 +25,7 @@ contract PredictionPool is ReentrancyGuard, Ownable2Step, Pausable {
     using SafeERC20 for IERC20;
 
     // --- CONSTANTS ---
-    uint256 public constant RAKE_BPS = 500; // 5% rake on winning pools
+    uint256 public constant RAKE_BPS = 750; // 7.5% rake on winning pools
     uint256 public constant MIN_BET = 100_000; // 0.10 USDC (6 decimals)
     uint256 public constant MAX_OUTCOMES = 10; // Maximum outcomes per pool
 
@@ -45,6 +45,9 @@ contract PredictionPool is ReentrancyGuard, Ownable2Step, Pausable {
 
     // Track if a bettor has claimed winnings for a pool
     mapping(uint256 => mapping(address => bool)) public hasClaimed;
+
+    // Pull-payment fallback for failed transfers (e.g., blocklisted addresses)
+    mapping(address => uint256) public pendingWithdrawals;
 
     // --- STRUCTS ---
     struct Pool {
@@ -100,6 +103,9 @@ contract PredictionPool is ReentrancyGuard, Ownable2Step, Pausable {
         address indexed bettor,
         uint256 amount
     );
+
+    event WithdrawalQueued(address indexed recipient, uint256 amount);
+    event Withdrawn(address indexed recipient, uint256 amount);
 
     event TreasuryUpdated(
         address indexed oldTreasury,
@@ -237,9 +243,11 @@ contract PredictionPool is ReentrancyGuard, Ownable2Step, Pausable {
         IBaseEscrow escrow = IBaseEscrow(p.escrowAddress);
         address winner = escrow.getMatchWinner(p.matchId);
 
+        // Fetch match data once — needed for status check and player lookup
+        IBaseEscrow.BaseMatch memory matchData = escrow.getMatch(p.matchId);
+
         if (winner == address(0)) {
             // No winner set — must confirm the match actually settled (not just not resolved yet)
-            IBaseEscrow.BaseMatch memory matchData = escrow.getMatch(p.matchId);
             require(matchData.status == IBaseEscrow.MatchStatus.SETTLED, "Match not settled yet");
             // Match settled with no winner = draw
             _resolvePoolAsDraw(poolId);
@@ -247,7 +255,6 @@ contract PredictionPool is ReentrancyGuard, Ownable2Step, Pausable {
         }
 
         // Find winner index in players array
-        IBaseEscrow.BaseMatch memory matchData = escrow.getMatch(p.matchId);
         uint8 winnerIndex = _findWinnerIndex(matchData.players, winner);
         require(winnerIndex < matchData.players.length, "Winner not found in players");
 
@@ -377,9 +384,20 @@ contract PredictionPool is ReentrancyGuard, Ownable2Step, Pausable {
         p.totalPool -= betAmount;
 
         // Transfer refund
-        usdc.safeTransfer(bettor, betAmount);
+        _safeTransfer(bettor, betAmount);
 
         emit RefundClaimed(poolId, bettor, betAmount);
+    }
+
+    /**
+     * @dev Claim queued funds from failed transfers (pull-payment fallback).
+     */
+    function withdraw() external nonReentrant {
+        uint256 amount = pendingWithdrawals[msg.sender];
+        require(amount > 0, "Nothing to withdraw");
+        pendingWithdrawals[msg.sender] = 0;
+        usdc.safeTransfer(msg.sender, amount);
+        emit Withdrawn(msg.sender, amount);
     }
 
     // --- VIEW FUNCTIONS ---
@@ -504,6 +522,22 @@ contract PredictionPool is ReentrancyGuard, Ownable2Step, Pausable {
         emit PoolResolved(poolId, winningOutcome, p.totalPool, totalRake);
     }
 
+    /**
+     * @dev Safe transfer with pull-payment fallback.
+     * If transfer fails (e.g., blocklisted recipient), queues funds for manual withdrawal.
+     */
+    function _safeTransfer(address to, uint256 amount) internal {
+        try usdc.transfer(to, amount) returns (bool success) {
+            if (!success) {
+                pendingWithdrawals[to] += amount;
+                emit WithdrawalQueued(to, amount);
+            }
+        } catch {
+            pendingWithdrawals[to] += amount;
+            emit WithdrawalQueued(to, amount);
+        }
+    }
+
     function _processDrawRefund(uint256 poolId, Pool storage p) internal {
         uint256 totalRefund = 0;
 
@@ -518,7 +552,7 @@ contract PredictionPool is ReentrancyGuard, Ownable2Step, Pausable {
 
         require(totalRefund > 0, "No bets to refund");
 
-        usdc.safeTransfer(msg.sender, totalRefund);
+        _safeTransfer(msg.sender, totalRefund);
 
         emit RefundClaimed(poolId, msg.sender, totalRefund);
     }
@@ -539,7 +573,7 @@ contract PredictionPool is ReentrancyGuard, Ownable2Step, Pausable {
 
         uint256 payout = (betAmount * remainingPool) / winningTotal;
 
-        usdc.safeTransfer(msg.sender, payout);
+        _safeTransfer(msg.sender, payout);
 
         emit WinningsClaimed(poolId, msg.sender, payout);
     }

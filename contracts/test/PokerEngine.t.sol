@@ -43,6 +43,9 @@ contract PokerEngineTest is Test {
         registry.registerLogic("QmPoker", address(this), true, 4);  // Hold'em: 4 streets
         registry.registerLogic("QmDraw", address(this), true, 1);   // 5-Card Draw: 1 street
         registry.registerSimpleGame("QmRPS", address(this));         // RPS: no betting
+
+        // Authorize poker engine to record volume
+        registry.setAuthorizedEscrow(address(poker), true);
     }
 
     // ==================== CONSTRUCTOR TESTS ====================
@@ -97,7 +100,7 @@ contract PokerEngineTest is Test {
 
         // maxPlayers < 2
         vm.prank(player1);
-        vm.expectRevert("Need at least 2 players");
+        vm.expectRevert("Players must be 2-6");
         poker.createMatch(100 * 1e6, LOGIC_ID_POKER, 1, 1, 10, 500 * 1e6, PokerEngine.BetStructure.NO_LIMIT);
 
         // winsRequired = 0
@@ -2260,5 +2263,171 @@ contract PokerEngineTest is Test {
         m = poker.getMatch(1);
         assertEq(uint8(m.status), uint8(IBaseEscrow.MatchStatus.SETTLED));
         assertEq(m.winner, player1);
+    }
+
+    // ==================== RESOLVE ROUND SPLIT TESTS ====================
+
+    function _makeSplitRes(uint8 w0, uint8 w1, uint256 bps0, uint256 bps1)
+        internal pure returns (IBaseEscrow.Resolution memory)
+    {
+        uint8[] memory winners = new uint8[](2);
+        winners[0] = w0; winners[1] = w1;
+        uint256[] memory splits = new uint256[](2);
+        splits[0] = bps0; splits[1] = bps1;
+        return IBaseEscrow.Resolution({ winnerIndices: winners, splitBps: splits });
+    }
+
+    function test_ResolveRoundSplit_Success() public {
+        // 1-street match, both reveal, referee splits 50/50
+        _createAndJoinMatchDraw();
+        _commitBothPlayers(1);
+        _checkBothPlayers(1);
+        _revealBothPlayers(1);
+
+        uint256 p1Before = usdc.balanceOf(player1);
+        uint256 p2Before = usdc.balanceOf(player2);
+
+        vm.prank(referee);
+        poker.resolveRoundSplit(1, _makeSplitRes(0, 1, 5000, 5000));
+
+        IBaseEscrow.BaseMatch memory m = poker.getMatch(1);
+        assertEq(uint8(m.status), uint8(IBaseEscrow.MatchStatus.SETTLED));
+
+        // Pot = 200, rake = 15 (7.5%), remaining = 185, each gets 92.5
+        assertEq(usdc.balanceOf(player1) - p1Before, 92_500_000);
+        assertEq(usdc.balanceOf(player2) - p2Before, 92_500_000);
+    }
+
+    function test_ResolveRoundSplit_UnevenSplit() public {
+        // Referee can split 70/30 (e.g., Hi-Lo where player1 wins hi, player2 wins lo)
+        _createAndJoinMatchDraw();
+        _commitBothPlayers(1);
+        _checkBothPlayers(1);
+        _revealBothPlayers(1);
+
+        uint256 p1Before = usdc.balanceOf(player1);
+        uint256 p2Before = usdc.balanceOf(player2);
+
+        vm.prank(referee);
+        poker.resolveRoundSplit(1, _makeSplitRes(0, 1, 7000, 3000));
+
+        // Pot = 200, rake = 15, remaining = 185
+        // player1: 185 * 70% = 129.5, player2 (last winner): 185 - 129.5 = 55.5
+        assertEq(usdc.balanceOf(player1) - p1Before, 129_500_000);
+        assertEq(usdc.balanceOf(player2) - p2Before, 55_500_000);
+    }
+
+    function test_ResolveRoundSplit_NotReferee() public {
+        _createAndJoinMatchDraw();
+        _commitBothPlayers(1);
+        _checkBothPlayers(1);
+        _revealBothPlayers(1);
+
+        vm.prank(player1);
+        vm.expectRevert("Only referee");
+        poker.resolveRoundSplit(1, _makeSplitRes(0, 1, 5000, 5000));
+    }
+
+    function test_ResolveRoundSplit_NotActive() public {
+        vm.prank(player1);
+        poker.createMatch(100 * 1e6, LOGIC_ID_DRAW, 2, 1, 10, 1000 * 1e6, PokerEngine.BetStructure.NO_LIMIT);
+        // Match is OPEN (player2 hasn't joined)
+
+        vm.prank(referee);
+        vm.expectRevert("Not active");
+        poker.resolveRoundSplit(1, _makeSplitRes(0, 1, 5000, 5000));
+    }
+
+    function test_ResolveRoundSplit_NotAllRevealed() public {
+        _createAndJoinMatchDraw();
+        _commitBothPlayers(1);
+        _checkBothPlayers(1);
+        // Only player1 reveals
+        vm.prank(player1);
+        poker.revealMove(1, bytes32(uint256(5)), bytes32(uint256(111)));
+
+        vm.prank(referee);
+        vm.expectRevert("Not all revealed");
+        poker.resolveRoundSplit(1, _makeSplitRes(0, 1, 5000, 5000));
+    }
+
+    function test_ResolveRoundSplit_SingleWinnerReverts() public {
+        _createAndJoinMatchDraw();
+        _commitBothPlayers(1);
+        _checkBothPlayers(1);
+        _revealBothPlayers(1);
+
+        uint8[] memory winners = new uint8[](1);
+        winners[0] = 0;
+        uint256[] memory splits = new uint256[](1);
+        splits[0] = 10000;
+        IBaseEscrow.Resolution memory res = IBaseEscrow.Resolution({ winnerIndices: winners, splitBps: splits });
+
+        vm.prank(referee);
+        vm.expectRevert("Use resolveRound for single winner");
+        poker.resolveRoundSplit(1, res);
+    }
+
+    function test_ResolveRoundSplit_InvalidWinnerIndex() public {
+        _createAndJoinMatchDraw();
+        _commitBothPlayers(1);
+        _checkBothPlayers(1);
+        _revealBothPlayers(1);
+
+        // Index 2 is out of bounds for a 2-player match
+        vm.prank(referee);
+        vm.expectRevert("Invalid winner index");
+        poker.resolveRoundSplit(1, _makeSplitRes(0, 2, 5000, 5000));
+    }
+
+    function test_ResolveRoundSplit_FoldedWinner() public {
+        // 3-player match: player1 folds during BET, then try to include player1 in split
+        vm.prank(player1);
+        poker.createMatch(100 * 1e6, LOGIC_ID_DRAW, 3, 1, 10, 1000 * 1e6, PokerEngine.BetStructure.NO_LIMIT);
+        vm.prank(player2); poker.joinMatch(1);
+        vm.prank(player3); poker.joinMatch(1);
+
+        // Commit all 3 with known move+salt
+        bytes32 move1 = bytes32(uint256(1)); bytes32 salt1 = bytes32(uint256(111));
+        bytes32 move2 = bytes32(uint256(2)); bytes32 salt2 = bytes32(uint256(222));
+        bytes32 move3 = bytes32(uint256(3)); bytes32 salt3 = bytes32(uint256(333));
+        bytes32 hash1 = keccak256(abi.encodePacked("FALKEN_V4", address(poker), uint256(1), uint256(1), player1, move1, salt1));
+        bytes32 hash2 = keccak256(abi.encodePacked("FALKEN_V4", address(poker), uint256(1), uint256(1), player2, move2, salt2));
+        bytes32 hash3 = keccak256(abi.encodePacked("FALKEN_V4", address(poker), uint256(1), uint256(1), player3, move3, salt3));
+
+        vm.prank(player1); poker.commitMove(1, hash1);
+        vm.prank(player2); poker.commitMove(1, hash2);
+        vm.prank(player3); poker.commitMove(1, hash3);
+
+        // BET phase: player1 folds, player2 checks, player3 checks
+        vm.prank(player1); poker.fold(1);
+        vm.prank(player2); poker.check(1);
+        vm.prank(player3); poker.check(1);
+
+        // REVEAL phase: only player2 and player3 reveal (activePlayers=2)
+        vm.prank(player2); poker.revealMove(1, move2, salt2);
+        vm.prank(player3); poker.revealMove(1, move3, salt3);
+
+        // Try to split between player2 (idx 1) and player1 (idx 0, folded)
+        vm.prank(referee);
+        vm.expectRevert("Winner folded");
+        poker.resolveRoundSplit(1, _makeSplitRes(1, 0, 5000, 5000));
+    }
+
+    function test_RecordVolume_AfterSettlement() public {
+        // Verify totalVolume is recorded in LogicRegistry after match settlement
+        _createAndJoinMatchDraw(); // 2 players × 100 USDC = 200 pot
+
+        (,,,,,,, uint256 volumeBefore) = registry.registry(LOGIC_ID_DRAW);
+        assertEq(volumeBefore, 0);
+
+        _commitBothPlayers(1);
+        _checkBothPlayers(1);
+        _revealBothPlayers(1);
+        vm.prank(referee);
+        poker.resolveRound(1, 0);
+
+        (,,,,,,, uint256 volumeAfter) = registry.registry(LOGIC_ID_DRAW);
+        assertEq(volumeAfter, 200 * 1e6);
     }
 }
