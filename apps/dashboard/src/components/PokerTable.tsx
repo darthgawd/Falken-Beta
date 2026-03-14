@@ -56,6 +56,8 @@ interface PokerTableProps {
   playerBNickname?: string;
   isShowdown?: boolean;
   winner?: number; // 0=Draw, 1=A, 2=B
+  foldedA?: boolean;
+  foldedB?: boolean;
 }
 
 export const PokerTable = ({
@@ -71,7 +73,9 @@ export const PokerTable = ({
   playerANickname,
   playerBNickname,
   isShowdown = false,
-  winner
+  winner,
+  foldedA = false,
+  foldedB = false
 }: PokerTableProps) => {
   // 1. Generate deck identically to poker.js
   const generateDeck = (seedStr: string) => {
@@ -179,7 +183,12 @@ export const PokerTable = ({
                 WAITING TO JOIN
               </div>
             )}
-            {showB && (
+            {foldedB && (
+              <div className="mt-1 text-[10px] sm:text-[12px] font-black text-red-500 uppercase tracking-widest bg-red-500/10 px-2 py-0.5 rounded border border-red-500/20">
+                FOLDED
+              </div>
+            )}
+            {showB && !foldedB && (
               <div className="mt-1 flex flex-col items-center gap-1">
                 <div className="text-[8px] sm:text-[10px] font-black text-blue-400 uppercase tracking-widest bg-blue-500/10 px-2 py-0.5 rounded border border-blue-500/20">
                   {HAND_LABELS[handRankB]}
@@ -200,7 +209,7 @@ export const PokerTable = ({
         </div>
 
         {/* Winner Announcement - Positioned between hands */}
-        {winner !== null && winner !== undefined && isShowdown && (
+        {winner !== null && winner !== undefined && (
           <div className="absolute top-[54%] left-1/2 -translate-x-1/2 -translate-y-1/2 z-10 animate-in fade-in zoom-in duration-700 w-full flex justify-center">
             <div className={`px-6 py-2 rounded-full border backdrop-blur-md shadow-2xl ${
               winner === 1 ? 'bg-gold/20 border-gold/40 text-gold' :
@@ -234,12 +243,17 @@ export const PokerTable = ({
           </div>
           <div className="flex flex-col items-center">
             <div className="mb-1 flex flex-col items-center gap-1">
-              {showA && (
+              {foldedA && (
+                <div className="text-[10px] sm:text-[12px] font-black text-red-500 uppercase tracking-widest bg-red-500/10 px-2 py-0.5 rounded border border-red-500/20">
+                  FOLDED
+                </div>
+              )}
+              {showA && !foldedA && (
                 <div className="text-[8px] sm:text-[10px] font-black text-gold uppercase tracking-widest bg-gold/10 px-2 py-0.5 rounded border border-gold/20">
                   {HAND_LABELS[handRankA]}
                 </div>
               )}
-              {showA && discardIndicesA.length > 0 && (
+              {showA && !foldedA && discardIndicesA.length > 0 && (
                 <span className="text-[7px] sm:text-[9px] font-black text-white/30 uppercase tracking-[0.1em] italic">
                   {discardIndicesA.length} {discardIndicesA.length === 1 ? 'CARD' : 'CARDS'} SWAPPED
                 </span>

@@ -56,6 +56,7 @@ export default function MatchDetail({ params }: { params: Promise<{ id: string }
   const matchId = resolvedParams.id;
   const [match, setMatch] = useState<Match | null>(null);
   const [rounds, setRounds] = useState<Round[]>([]);
+  const [actions, setActions] = useState<any[]>([]);
   const [salts, setSalts] = useState<Record<number, { agent_address: string; salt_value: string; move_value: string }[]>>({});
   const [nicknames, setNicknames] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
@@ -77,6 +78,12 @@ export default function MatchDetail({ params }: { params: Promise<{ id: string }
         .select('*')
         .eq('match_id', matchId)
         .order('round_number', { ascending: true });
+
+      const { data: actionsData } = await supabase
+        .from('match_actions')
+        .select('*')
+        .eq('match_id', matchId)
+        .order('created_at', { ascending: true });
 
       // Fetch salts for each round
       const uniqueRounds = [...new Set((roundsData || []).map(r => r.round_number))];
@@ -112,6 +119,7 @@ export default function MatchDetail({ params }: { params: Promise<{ id: string }
         setNicknames(nameMap);
       }
       setRounds(roundsData || []);
+      setActions(actionsData || []);
       setLoading(false);
     }
 
@@ -292,6 +300,8 @@ export default function MatchDetail({ params }: { params: Promise<{ id: string }
                       playerBNickname={match.players[1] ? nicknames[match.players[1].toLowerCase()] : undefined}
                       isShowdown={round.a?.revealed && round.b?.revealed}
                       winner={round.winner}
+                      foldedA={actions.some(a => a.round_number === round.round && a.player_address?.toLowerCase() === match.players[0]?.toLowerCase() && a.action_type === 'FOLD')}
+                      foldedB={actions.some(a => a.round_number === round.round && a.player_address?.toLowerCase() === match.players[1]?.toLowerCase() && a.action_type === 'FOLD')}
                     />
                   </div>
                   

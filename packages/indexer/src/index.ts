@@ -40,6 +40,7 @@ const POKER_ENGINE_ABI = [
   { name: 'RoundResolved', type: 'event', inputs: [{ name: 'matchId', type: 'uint256', indexed: true }, { name: 'round', type: 'uint8', indexed: false }, { name: 'winnerIndex', type: 'uint8', indexed: false }] },
   { name: 'MatchSettled', type: 'event', inputs: [{ name: 'matchId', type: 'uint256', indexed: true }, { name: 'winnerIndices', type: 'uint8[]', indexed: false }, { name: 'payout', type: 'uint256', indexed: false }, { name: 'rake', type: 'uint256', indexed: false }] },
   { name: 'MatchVoided', type: 'event', inputs: [{ name: 'matchId', type: 'uint256', indexed: true }, { name: 'reason', type: 'string', indexed: false }] },
+  { name: 'TimeoutClaimed', type: 'event', inputs: [{ name: 'matchId', type: 'uint256', indexed: true }, { name: 'claimer', type: 'address', indexed: true }, { name: 'winnerIndex', type: 'uint8', indexed: false }] },
   { name: 'getMatch', type: 'function', inputs: [{ name: 'matchId', type: 'uint256' }], outputs: [{ type: 'tuple', components: [{ name: 'players', type: 'address[]' }, { name: 'stake', type: 'uint256' }, { name: 'totalPot', type: 'uint256' }, { name: 'logicId', type: 'bytes32' }, { name: 'maxPlayers', type: 'uint8' }, { name: 'maxRounds', type: 'uint8' }, { name: 'currentRound', type: 'uint8' }, { name: 'wins', type: 'uint8[]' }, { name: 'drawCounter', type: 'uint8' }, { name: 'winsRequired', type: 'uint8' }, { name: 'status', type: 'uint8' }, { name: 'winner', type: 'address' }, { name: 'createdAt', type: 'uint256' }] }] },
   { name: 'getPokerState', type: 'function', inputs: [{ name: 'matchId', type: 'uint256' }], outputs: [{ type: 'tuple', components: [{ name: 'phase', type: 'uint8' }, { name: 'betStructure', type: 'uint8' }, { name: 'maxStreets', type: 'uint8' }, { name: 'street', type: 'uint8' }, { name: 'activePlayers', type: 'uint8' }, { name: 'raiseCount', type: 'uint8' }, { name: 'playersToAct', type: 'uint8' }, { name: 'currentBet', type: 'uint256' }, { name: 'maxBuyIn', type: 'uint256' }, { name: 'commitDeadline', type: 'uint256' }, { name: 'betDeadline', type: 'uint256' }, { name: 'revealDeadline', type: 'uint256' }, { name: 'folded', type: 'bool[]' }, { name: 'streetBets', type: 'uint256[]' }] }] }
 ] as const;
@@ -237,17 +238,33 @@ async function processLog(log: any) {
       reveal_deadline: pokerState.revealDeadline ? new Date(Number(pokerState.revealDeadline) * 1000).toISOString() : null
     }).eq('match_id', mId);
 
+  } else if (eventName === 'PlayerFolded') {
+    // Track fold in match_actions for UI display
+    await supabase.from('match_actions').insert({
+      match_id: mId,
+      round_number: 0, // Will be updated from match current_round
+      player_address: args.player.toLowerCase(),
+      action_type: 'FOLD',
+      tx_hash: txHash
+    });
+
   } else if (eventName === 'RoundResolved') {
+    const winnerIdx = Number(args.winnerIndex);
+    const roundNum = Number(args.round);
+    
+    // Update rounds table with winner for this round
+    await supabase.from('rounds').update({ winner: winnerIdx }).eq('match_id', mId).eq('round_number', roundNum);
+    
     // Update match wins array and increment round
     const { data: match } = await supabase.from('matches').select('wins, draw_counter, current_round').eq('match_id', mId).single();
     if (match) {
       const wins = [...match.wins];
       let drawCounter = match.draw_counter;
       
-      if (args.winnerIndex === 255) {
+      if (winnerIdx === 255) {
         drawCounter++;
       } else {
-        wins[args.winnerIndex]++;
+        wins[winnerIdx]++;
       }
 
       // Fetch updated poker state to get new deadlines for next round
@@ -260,13 +277,22 @@ async function processLog(log: any) {
       await supabase.from('matches').update({ 
         wins, 
         draw_counter: drawCounter,
-        current_round: Number(args.round) + 1, // Fix: Increment round for DB sync
+        current_round: roundNum + 1,
         phase: 'COMMIT',
         commit_deadline: pokerState.commitDeadline ? new Date(Number(pokerState.commitDeadline) * 1000).toISOString() : null,
         bet_deadline: pokerState.betDeadline ? new Date(Number(pokerState.betDeadline) * 1000).toISOString() : null,
         reveal_deadline: pokerState.revealDeadline ? new Date(Number(pokerState.revealDeadline) * 1000).toISOString() : null
       }).eq('match_id', mId);
     }
+
+  } else if (eventName === 'TimeoutClaimed') {
+    // Timeout settles match immediately
+    await supabase.from('matches').update({
+      status: 'SETTLED',
+      winner: Number(args.winnerIndex),
+      settle_tx_hash: txHash,
+      state_description: 'Timeout claimed'
+    }).eq('match_id', mId);
 
   } else if (eventName === 'MatchSettled') {
     const winner = args.winnerIndices.length > 0 ? 'SETTLED' : 'VOIDED'; // Placeholder logic
