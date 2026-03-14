@@ -282,16 +282,6 @@ class JoshuaFoundation {
       );
 
       this.pendingActions.add(actionKey);
-      
-      // V4: Save Salt to Supabase Vault
-      const { error: saltErr } = await supabase.from('salt_vault').insert({
-        agent_address: this.wallet.address.toLowerCase(),
-        match_id: dbMatchId,
-        round_number: round,
-        move_value: response.move.toString(),
-        salt_value: salt
-      });
-      if (saltErr) logger.error({ err: saltErr.message }, '❌ Failed to save salt to vault');
 
       await this.saveReasoning(dbMatchId, round, playerIdx, response);
 
@@ -299,6 +289,18 @@ class JoshuaFoundation {
       try {
         const tx = await this.escrow.commitMove(matchId, hash);
         await tx.wait();
+        
+        // V4: Save Salt to Supabase Vault ONLY after successful commit
+        const { error: saltErr } = await supabase.from('salt_vault').insert({
+          agent_address: this.wallet.address.toLowerCase(),
+          match_id: dbMatchId,
+          round_number: round,
+          move_value: response.move.toString(),
+          salt_value: salt
+        });
+        if (saltErr && !saltErr.message.includes('duplicate')) {
+          logger.error({ err: saltErr.message }, '❌ Failed to save salt to vault');
+        }
       } catch (err: any) {
         logger.error({ err: err.message }, 'Commit failed');
       } finally {
