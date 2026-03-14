@@ -252,8 +252,11 @@ async function processLog(log: any) {
     const winnerIdx = Number(args.winnerIndex);
     const roundNum = Number(args.round);
     
+    // Map contract winner index to schema: 0=Draw, 1=PlayerA, 2=PlayerB
+    const schemaWinner = winnerIdx === 255 ? 0 : winnerIdx === 0 ? 1 : 2;
+    
     // Update rounds table with winner for this round
-    await supabase.from('rounds').update({ winner: winnerIdx }).eq('match_id', mId).eq('round_number', roundNum);
+    await supabase.from('rounds').update({ winner: schemaWinner }).eq('match_id', mId).eq('round_number', roundNum);
     
     // Update match wins array and increment round
     const { data: match } = await supabase.from('matches').select('wins, draw_counter, current_round').eq('match_id', mId).single();
@@ -286,10 +289,17 @@ async function processLog(log: any) {
     }
 
   } else if (eventName === 'TimeoutClaimed') {
-    // Timeout settles match immediately
+    // Timeout settles match immediately - update wins array too
+    const { data: match } = await supabase.from('matches').select('wins').eq('match_id', mId).single();
+    const winnerIdx = Number(args.winnerIndex);
+    const wins = match?.wins ? [...match.wins] : [0, 0];
+    if (winnerIdx < wins.length) {
+      wins[winnerIdx]++;
+    }
     await supabase.from('matches').update({
       status: 'SETTLED',
-      winner: Number(args.winnerIndex),
+      winner: winnerIdx,
+      wins,
       settle_tx_hash: txHash,
       state_description: 'Timeout claimed'
     }).eq('match_id', mId);
