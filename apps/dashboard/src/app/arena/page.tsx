@@ -15,7 +15,7 @@ export default function ArenaPage() {
   const { authenticated, login } = usePrivy();
   const [activeTab, setActiveTab] = useState<'terminal' | 'arena'>('arena');
   const [briefTab, setBriefTab] = useState<'commanders' | 'architects'>('commanders');
-  const [arenaFilter, setArenaFilter] = useState<'ALL' | 'POKER' | 'RPS'>('ALL');
+  const [arenaFilter, setArenaFilter] = useState<'ALL' | 'POKER'>('ALL');
   const [expandedModule, setExpandedModule] = useState<'rankings' | 'registry' | 'telemetry' | 'agent' | null>(null);
 
   // Initialize with rankings expanded on desktop only
@@ -95,7 +95,7 @@ export default function ArenaPage() {
                     </div>
                   </div>
                   <div 
-                    onClick={() => { setActiveTab('arena'); setArenaFilter('RPS'); }}
+                    onClick={() => { setActiveTab('arena'); }}
                     className="group flex flex-col items-center p-0 rounded-2xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900/50 hover:border-purple-500/50 transition-all cursor-pointer overflow-hidden aspect-square relative shadow-sm"
                   >
                     <img src="/icons/rps.png" alt="RPS Duel" className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
