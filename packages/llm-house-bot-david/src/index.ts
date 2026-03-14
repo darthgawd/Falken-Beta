@@ -251,7 +251,7 @@ class DavidFoundation {
 
     if (phase === 0 && commitHash === ethers.ZeroHash) { // COMMIT
       const salt = ethers.hexlify(ethers.randomBytes(32));
-      const response = await this.queryRotatingBrain(matchId, round, matchData.logicId, playerIdx, "COMMIT");
+      const response = await this.queryBrain(matchId, round, matchData.logicId, playerIdx, "COMMIT");
       
       const moveBytes32 = ethers.zeroPadValue(ethers.toBeHex(response.move), 32);
       const hash = ethers.solidityPackedKeccak256(
@@ -261,24 +261,34 @@ class DavidFoundation {
 
       this.pendingActions.add(actionKey);
 
-      // V4: Save Salt to Supabase Vault
-      const { error: saltErr } = await supabase.from('salt_vault').insert({
-        agent_address: this.wallet.address.toLowerCase(),
-        match_id: dbMatchId,
-        round_number: round,
-        move_value: response.move.toString(),
-        salt_value: salt
-      });
-      if (saltErr) logger.error({ err: saltErr.message }, '❌ Failed to save salt to vault');
-
       await this.saveReasoning(dbMatchId, round, playerIdx, response);
 
       logger.info({ matchId, model: response.model, reasoning: response.reasoning }, '🎲 Committing Move');
       try {
         const tx = await this.escrow.commitMove(matchId, hash, { nonce: await this.wallet.getNonce('pending') });
         await tx.wait();
+        
+        // V4: Save Salt to Supabase Vault ONLY after successful commit
+        const { error: saltErr } = await supabase.from('salt_vault').insert({
+          agent_address: this.wallet.address.toLowerCase(),
+          match_id: dbMatchId,
+          round_number: round,
+          move_value: response.move.toString(),
+          salt_value: salt
+        });
+        if (saltErr && !saltErr.message.includes('duplicate')) {
+          logger.error({ err: saltErr.message }, '❌ Failed to save salt to vault');
+        }
       } catch (err: any) {
-        logger.error({ err: err.message }, 'Commit failed');
+        logger.error({ 
+          err: err.message, 
+          reason: err.reason,
+          code: err.code,
+          data: err.data,
+          matchId,
+          round,
+          playerIdx
+        }, 'Commit failed');
       } finally {
         this.pendingActions.delete(actionKey);
       }
@@ -288,7 +298,7 @@ class DavidFoundation {
       if (Number(turnIndex) !== playerIdx) return;
 
       const amountOwed = ps.currentBet - (ps.streetBets[playerIdx] ?? 0n);
-      const response = await this.queryRotatingBrain(matchId, round, matchData.logicId, playerIdx, "BET", {
+      const response = await this.queryBrain(matchId, round, matchData.logicId, playerIdx, "BET", {
         pot: ethers.formatUnits(matchData.totalPot, 6),
         toCall: ethers.formatUnits(amountOwed, 6),
         raisesLeft: (2n - BigInt(ps.raiseCount)).toString()
@@ -366,7 +376,7 @@ class DavidFoundation {
     }, { onConflict: 'match_id,round_number,player_address' });
   }
 
-  async queryRotatingBrain(matchId: number, round: number, logicId: string, playerIdx: number, phase: string, wagerData?: any): Promise<BrainResponse> {
+  async queryBrain(matchId: number, round: number, logicId: string, playerIdx: number, phase: string, wagerData?: any): Promise<BrainResponse> {
     const prompt = `You are David, a competitive AI agent. Phase: ${phase}
     ${this.getGameContext(matchId, round, logicId, playerIdx)}
     ${phase === "BET" ? `\nWAGER PHASE: Total Pot: $${wagerData.pot}. To Call: $${wagerData.toCall}. Raises Left: ${wagerData.raisesLeft}. DECISION RULES: move 0=CHECK/CALL, 1=RAISE, 2=FOLD.` : ""}
