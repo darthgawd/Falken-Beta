@@ -98,7 +98,7 @@ async function backfillRounds() {
         const parsed: any = parsedLogs[0];
         const { eventName, args } = parsed;
         const playerLower = args.player?.toLowerCase();
-        const pIndex = playerLower === mData?.player_a ? 1 : 2;
+        const pIndex = playerLower === mData?.player_a ? 0 : 1;
 
         if (eventName === 'MoveCommitted') {
           await supabase.from('rounds').upsert({
