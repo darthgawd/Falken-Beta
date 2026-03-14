@@ -58,6 +58,10 @@ interface PokerTableProps {
   winner?: number; // 0=Draw, 1=A, 2=B
   foldedA?: boolean;
   foldedB?: boolean;
+  totalPot?: number; // in USDC (6 decimals)
+  currentBet?: number; // current bet to call
+  playerAStake?: number; // amount player A has bet this round
+  playerBStake?: number; // amount player B has bet this round
 }
 
 export const PokerTable = ({
@@ -75,7 +79,11 @@ export const PokerTable = ({
   isShowdown = false,
   winner,
   foldedA = false,
-  foldedB = false
+  foldedB = false,
+  totalPot = 0,
+  currentBet = 0,
+  playerAStake = 0,
+  playerBStake = 0
 }: PokerTableProps) => {
   // 1. Generate deck identically to poker.js
   const generateDeck = (seedStr: string) => {
@@ -183,6 +191,11 @@ export const PokerTable = ({
                 WAITING TO JOIN
               </div>
             )}
+            {playerBStake > 0 && (
+              <div className="mt-1 text-[9px] sm:text-[10px] font-black text-yellow-400 uppercase tracking-widest bg-yellow-500/10 px-2 py-0.5 rounded border border-yellow-500/20">
+                Bet: ${(playerBStake / 1e6).toFixed(2)}
+              </div>
+            )}
             {foldedB && (
               <div className="mt-1 text-[10px] sm:text-[12px] font-black text-red-500 uppercase tracking-widest bg-red-500/10 px-2 py-0.5 rounded border border-red-500/20">
                 FOLDED
@@ -225,8 +238,25 @@ export const PokerTable = ({
           </div>
         )}
 
+        {/* Pot Display */}
+        {(totalPot > 0 || currentBet > 0) && (
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col items-center z-10">
+            <div className="bg-black/60 backdrop-blur-md border border-yellow-500/30 rounded-full px-4 py-2 shadow-2xl">
+              <div className="flex flex-col items-center">
+                <span className="text-[10px] font-black text-yellow-500 uppercase tracking-widest">Pot</span>
+                <span className="text-lg sm:text-xl font-black text-white">${(totalPot / 1e6).toFixed(2)}</span>
+              </div>
+            </div>
+            {currentBet > 0 && (
+              <div className="mt-2 bg-red-500/20 backdrop-blur-md border border-red-500/30 rounded-full px-3 py-1">
+                <span className="text-[10px] font-black text-red-400 uppercase tracking-widest">To Call: ${(currentBet / 1e6).toFixed(2)}</span>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Center Table Decorations */}
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col items-center">
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col items-center pointer-events-none">
           <div className="flex -space-x-4 opacity-10 grayscale">
             <div className="w-8 h-12 rounded border border-white/20 bg-white/5 rotate-[-15deg]" />
             <div className="w-8 h-12 rounded border border-white/20 bg-white/5 rotate-[5deg]" />
@@ -243,6 +273,11 @@ export const PokerTable = ({
           </div>
           <div className="flex flex-col items-center">
             <div className="mb-1 flex flex-col items-center gap-1">
+              {playerAStake > 0 && (
+                <div className="text-[9px] sm:text-[10px] font-black text-yellow-400 uppercase tracking-widest bg-yellow-500/10 px-2 py-0.5 rounded border border-yellow-500/20">
+                  Bet: ${(playerAStake / 1e6).toFixed(2)}
+                </div>
+              )}
               {foldedA && (
                 <div className="text-[10px] sm:text-[12px] font-black text-red-500 uppercase tracking-widest bg-red-500/10 px-2 py-0.5 rounded border border-red-500/20">
                   FOLDED

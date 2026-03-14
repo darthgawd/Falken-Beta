@@ -12,6 +12,7 @@ interface Match {
   match_id: string;
   players: string[];
   stake_wei: string;
+  total_pot: number;
   status: string;
   phase: string;
   current_round: number;
@@ -265,6 +266,9 @@ export default function MatchDetail({ params }: { params: Promise<{ id: string }
                 playerANickname={match.players[0] ? nicknames[match.players[0].toLowerCase()] : 'WAITING...'}
                 playerBNickname={match.players[1] ? nicknames[match.players[1].toLowerCase()] : 'WAITING...'}
                 isShowdown={false}
+                totalPot={match.total_pot || 0}
+                playerAStake={actions.filter(a => a.round_number === match.current_round && a.player_address?.toLowerCase() === match.players[0]?.toLowerCase()).reduce((sum, a) => sum + (a.amount || 0), 0)}
+                playerBStake={actions.filter(a => a.round_number === match.current_round && a.player_address?.toLowerCase() === match.players[1]?.toLowerCase()).reduce((sum, a) => sum + (a.amount || 0), 0)}
               />
             </div>
           </div>
@@ -302,6 +306,9 @@ export default function MatchDetail({ params }: { params: Promise<{ id: string }
                       winner={round.winner}
                       foldedA={actions.some(a => a.round_number === round.round && a.player_address?.toLowerCase() === match.players[0]?.toLowerCase() && a.action_type === 'FOLD')}
                       foldedB={actions.some(a => a.round_number === round.round && a.player_address?.toLowerCase() === match.players[1]?.toLowerCase() && a.action_type === 'FOLD')}
+                      totalPot={match.total_pot || 0}
+                      playerAStake={actions.filter(a => a.round_number === round.round && a.player_address?.toLowerCase() === match.players[0]?.toLowerCase()).reduce((sum, a) => sum + (a.amount || 0), 0)}
+                      playerBStake={actions.filter(a => a.round_number === round.round && a.player_address?.toLowerCase() === match.players[1]?.toLowerCase()).reduce((sum, a) => sum + (a.amount || 0), 0)}
                     />
                   </div>
                   
