@@ -1,4 +1,4 @@
-import { GameResult, GameMove, MatchContext, FalkenResult } from '@falken/logic-sdk';
+import { GameResult, GameMove, MatchContext } from '@falken/logic-sdk';
 import pino from 'pino';
 import { getQuickJS, QuickJSContext } from 'quickjs-emscripten';
 

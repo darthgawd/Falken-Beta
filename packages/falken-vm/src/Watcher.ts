@@ -96,7 +96,7 @@ export class Watcher {
         eventName: 'MoveRevealed',
         onLogs: async (logs) => {
           for (const log of logs) {
-            const { matchId } = log.args as any;
+            const matchId = (log as any).args?.matchId;
             if (matchId) await this.processMatch(BigInt(matchId), config, registryAddress);
           }
         }
@@ -199,13 +199,19 @@ export class Watcher {
       }
 
       const revealPhase = config.type === 'POKER_ENGINE' ? 2 : 1;
+      const roundKey = `${onChainMatchId}-${currentRoundNum}-${currentStreet}`;
       logger.info({ matchId: onChainMatchId.toString(), status: Number(status), phase, revealPhase }, 'CHECKING_STATUS_PHASE');
       if (Number(status) !== 1 || phase !== revealPhase) {
-        logger.info({ matchId: onChainMatchId.toString() }, 'EARLY_RETURN_STATUS_PHASE');
+        logger.info({ matchId: onChainMatchId.toString(), status: Number(status) }, 'EARLY_RETURN_STATUS_PHASE');
+        // Remove from retry queue if match is no longer active (settled/voided)
+        if (Number(status) > 1) {
+          this.retryQueue.delete(roundKey);
+          logger.info({ matchId: onChainMatchId.toString() }, 'Removed from retry queue - match settled/voided');
+        }
         return;
       }
 
-      const roundKey = `${onChainMatchId}-${currentRoundNum}-${currentStreet}`;
+      // roundKey already declared above
       if (this.settledRounds.has(roundKey)) {
         logger.info({ matchId: onChainMatchId.toString(), roundKey }, 'EARLY_RETURN_ALREADY_SETTLED');
         return;
