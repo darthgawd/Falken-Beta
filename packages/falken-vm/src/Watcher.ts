@@ -205,8 +205,14 @@ export class Watcher {
         logger.info({ matchId: onChainMatchId.toString(), status: Number(status) }, 'EARLY_RETURN_STATUS_PHASE');
         // Remove from retry queue if match is no longer active (settled/voided)
         if (Number(status) > 1) {
-          this.retryQueue.delete(roundKey);
-          logger.info({ matchId: onChainMatchId.toString() }, 'Removed from retry queue - match settled/voided');
+          // Remove ALL entries for this matchId from retry queue (any round/street)
+          const matchIdStr = onChainMatchId.toString();
+          for (const [key, entry] of this.retryQueue.entries()) {
+            if (entry.matchId.toString() === matchIdStr) {
+              this.retryQueue.delete(key);
+              logger.info({ matchId: matchIdStr, key }, 'Removed from retry queue - match settled/voided');
+            }
+          }
         }
         return;
       }
