@@ -36,7 +36,9 @@
   "license": "ISC",
   "packageManager": "pnpm@10.29.3",
   "pnpm": {
-    "onlyBuiltDependencies": ["*"]
+    "onlyBuiltDependencies": [
+      "*"
+    ]
   },
   "devDependencies": {
     "@types/node": "^25.3.0",
@@ -48,6 +50,7 @@
     "typescript": "^5.9.3"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.97.0"
+    "@supabase/supabase-js": "^2.97.0",
+    "isolated-vm": "^4.7.2"
   }
 }

@@ -18,8 +18,8 @@
     "@falken/logic-sdk": "workspace:*",
     "@supabase/supabase-js": "^2.39.7",
     "dotenv": "^16.4.5",
-    "isolated-vm": "^4.6.0",
     "pino": "^8.19.0",
+    "quickjs-emscripten": "^0.32.0",
     "viem": "^2.46.2"
   },
   "devDependencies": {

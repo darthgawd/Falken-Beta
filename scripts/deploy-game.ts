@@ -14,8 +14,8 @@ const ADMIN_PRIVATE_KEY = process.env.PRIVATE_KEY; // The deployer key
 const RPC_URL = process.env.RPC_URL;
 
 const LOGIC_REGISTRY_ABI = [
-  "function registerLogic(string calldata ipfsCid, address developer) external returns (bytes32)",
-  "event LogicRegistered(bytes32 indexed logicId, string ipfsCid, address indexed developer)"
+  "function registerLogic(string calldata ipfsCid, address developer, bool bettingEnabled, uint8 maxStreets) external returns (bytes32)",
+  "event LogicRegistered(bytes32 indexed logicId, string ipfsCid, address indexed developer, bool bettingEnabled, uint8 maxStreets)"
 ];
 
 async function deployGame() {
@@ -65,7 +65,7 @@ async function deployGame() {
   const registry = new ethers.Contract(LOGIC_REGISTRY_ADDRESS, LOGIC_REGISTRY_ABI, wallet);
 
   try {
-    const tx = await registry.registerLogic(cid, DEVELOPER_ADDRESS);
+    const tx = await registry.registerLogic(cid, DEVELOPER_ADDRESS, true, 1);
     console.log(chalk.gray(`Waiting for transaction: ${tx.hash}`));
     const receipt = await tx.wait();
     console.log(chalk.green(`✅ Registered on-chain in block ${receipt.blockNumber}`));

@@ -1,20 +1,34 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
-let supabaseInstance: SupabaseClient | null = null;
+// V4 CLEANUP: Clear any legacy V3 session data that might cause 401 conflicts
+if (typeof window !== 'undefined') {
+  const legacyKeys = [
+    'supabase.auth.token',
+    'supabase.auth.refreshToken',
+    'supabase.auth.expires_at',
+    'falken_session',
+    'sb-seggybvrqqqdhecwtqoh-auth-token' // Old project key pattern
+  ];
+  legacyKeys.forEach(key => {
+    try {
+      localStorage.removeItem(key);
+      sessionStorage.removeItem(key);
+    } catch (e) {
+      // Ignore storage errors
+    }
+  });
+  console.log('SUPABASE_V4: Cleared legacy session data');
+}
 
-function getSupabaseClient(): SupabaseClient {
-  if (supabaseInstance) {
-    return supabaseInstance;
-  }
-
+// V4 FINAL HARDENING: This client is a pure "Guest" and cannot be poisoned by sessions.
+function createHardenedClient(): SupabaseClient {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
   if (!supabaseUrl || !supabaseAnonKey) {
-    // Return a mock client during build time that logs warnings
+    console.error('SUPABASE_INIT_ERROR: Missing credentials');
     if (typeof window === 'undefined') {
-      console.warn('Supabase credentials missing - using mock client for build');
-      // Return a minimal mock that won't crash during SSR
+      // Return a mock client for SSR
       return new Proxy({} as SupabaseClient, {
         get(target, prop) {
           if (prop === 'from') {
@@ -32,16 +46,41 @@ function getSupabaseClient(): SupabaseClient {
         },
       });
     }
-    throw new Error('Supabase credentials missing from environment variables.');
+    throw new Error('Supabase credentials missing. Check NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY');
   }
 
-  supabaseInstance = createClient(supabaseUrl, supabaseAnonKey);
+  console.log('SUPABASE_INIT: Initializing Hardened Guest Client for', supabaseUrl);
+
+  const client = createClient(supabaseUrl, supabaseAnonKey, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+      detectSessionInUrl: false,
+      storage: {
+        getItem: () => null,
+        setItem: () => {},
+        removeItem: () => {}
+      }
+    },
+    global: {
+      headers: {
+        'X-Client-Info': 'falken-dashboard'
+      }
+    }
+  });
+  
+  return client;
+}
+
+// Create singleton instance
+let supabaseInstance: SupabaseClient | null = null;
+
+export function getSupabaseClient(): SupabaseClient {
+  if (!supabaseInstance) {
+    supabaseInstance = createHardenedClient();
+  }
   return supabaseInstance;
 }
 
-export const supabase = new Proxy({} as SupabaseClient, {
-  get(target, prop) {
-    const client = getSupabaseClient();
-    return client[prop as keyof SupabaseClient];
-  },
-});
+// Export singleton for direct use
+export const supabase = getSupabaseClient();

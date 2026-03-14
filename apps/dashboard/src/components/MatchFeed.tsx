@@ -8,7 +8,7 @@ import Link from 'next/link';
 interface Match {
   match_id: string;
   players: string[];
-  stake_wei: string; 
+  stake_wei: number; 
   status: string;
   phase: string;
   game_logic: string;
@@ -19,16 +19,11 @@ interface Match {
   player_b_nickname?: string;
 }
 
-const RPS_LOGIC = (process.env.NEXT_PUBLIC_RPS_LOGIC_ADDRESS || '').toLowerCase();
 const POKER_ALIASES = [
-  '0xa00a45cb44b39c3dc91fb7963d2dd65c217ae5b25c20cb216c1f9431900a5d61',
-  '0x4173a4e2e54727578fd50a3f1e721827c4c97c3a2824ca469c0ec730d4264b43', 
-  '0xec63afc7c67678adbe7a60af04d49031878d1e78eff9758b1b79edeb7546dfdf', 
-  '0x5f164061c4cbb981098161539f7f691650e0c245be54ade84ea5b57496955846',
-  '0x61266711df04ebe17432b3482471e64c69150e370a9c558657b28944233b97d1'
+  '0x6de9e3cf14c5a06e9e46ade75679a7e6e49f4f9f96bd873e5166cf276ccf0233'
 ].map(a => a.toLowerCase());
 
-type GameTab = 'ALL' | 'POKER' | 'RPS';
+type GameTab = 'ALL' | 'POKER';
 
 export function MatchFeed({ initialTab = 'ALL', onTabChange }: { initialTab?: GameTab, onTabChange?: (tab: GameTab) => void }) {
   const [matches, setMatches] = useState<Match[]>([]);
@@ -51,7 +46,6 @@ export function MatchFeed({ initialTab = 'ALL', onTabChange }: { initialTab?: Ga
         .select('*')
         .order('created_at', { ascending: false });
       
-      if (activeTab === 'RPS') query = query.eq('game_logic', RPS_LOGIC);
       if (activeTab === 'POKER') query = query.in('game_logic', POKER_ALIASES);
 
       const { data: matchData } = await query.limit(100);
@@ -121,7 +115,7 @@ export function MatchFeed({ initialTab = 'ALL', onTabChange }: { initialTab?: Ga
   return (
     <div className="space-y-6 transition-colors duration-500 font-arena">
       <div className="flex gap-4 border-b border-zinc-100 dark:border-zinc-900 pb-4">
-        {(['ALL', 'POKER', 'RPS'] as GameTab[]).map((tab) => (
+        {(['ALL', 'POKER'] as GameTab[]).map((tab) => (
           <button
             key={tab}
             onClick={() => handleTabClick(tab)}
@@ -148,12 +142,10 @@ export function MatchFeed({ initialTab = 'ALL', onTabChange }: { initialTab?: Ga
             <div className="flex items-center gap-4 md:gap-6 w-full sm:w-auto">
               <div className="flex flex-col items-center min-w-[36px] md:min-w-[40px]">
                 <div className={`text-[9px] md:text-[10px] font-black tracking-widest ${
-                  match.game_logic.toLowerCase() === RPS_LOGIC ? 'text-orange-500' :
                   POKER_ALIASES.includes(match.game_logic.toLowerCase()) ? 'text-blue-500' :
                   'text-zinc-400 dark:text-zinc-700'
                 }`}>
-                  {match.game_logic.toLowerCase() === RPS_LOGIC ? 'RPS' : 
-                   POKER_ALIASES.includes(match.game_logic.toLowerCase()) ? 'POKER' : 'FISE'}
+                  {POKER_ALIASES.includes(match.game_logic.toLowerCase()) ? 'POKER' : 'FISE'}
                 </div>
                 <div className="text-[10px] md:text-xs font-black text-black dark:text-zinc-200 tabular-nums opacity-80 group-hover:opacity-100 transition-opacity">#{match.match_id.split('-').pop()}</div>
               </div>
@@ -182,26 +174,28 @@ export function MatchFeed({ initialTab = 'ALL', onTabChange }: { initialTab?: Ga
                   {(Number(match.stake_wei || 0) / 1e6).toFixed(2)} <span className="text-[10px] not-italic text-zinc-500 uppercase">USDC</span>
                 </span>
               </div>
-              
-              <div className="min-w-[80px] md:min-w-[100px] flex justify-end">
-                <div className={`flex items-center gap-1.5 md:gap-2 px-2 md:px-3 py-1 rounded border ${
-                  match.status === 'OPEN' ? 'bg-zinc-100 dark:bg-zinc-900 text-zinc-500 border-zinc-200 dark:border-zinc-800' :
-                  match.status === 'ACTIVE' ? 'bg-blue-600/5 dark:bg-blue-500/5 text-blue-600 dark:text-blue-500 border-blue-600/10 dark:border-blue-500/20' :
-                  match.status === 'SETTLED' ? 'bg-emerald-600/5 dark:bg-emerald-500/5 text-emerald-600 dark:text-emerald-500 border-emerald-600/10 dark:border-emerald-500/20' :
-                  'bg-red-600/5 dark:bg-red-500/5 text-red-600 dark:text-red-500 border-red-600/10 dark:border-red-500/20'
+
+              <div className="flex items-center gap-3">
+                <div className={`flex items-center gap-1.5 px-2 md:px-3 py-1 rounded-full border ${
+                  match.status === 'SETTLED' ? 'bg-green-500/10 text-green-500 border-green-500/20' :
+                  match.status === 'ACTIVE' ? 'bg-blue-500/10 text-blue-500 border-blue-500/20' :
+                  'bg-zinc-500/10 text-zinc-500 border-zinc-500/20'
                 }`}>
-                  {match.status === 'ACTIVE' && <Circle className="w-1.5 h-1.5 md:w-2 md:h-2 fill-blue-600 dark:fill-blue-500 animate-pulse" />}
-                  <span className="text-[9px] md:text-[10px] font-black uppercase tracking-widest">{match.status}</span>
+                  <Circle className={`w-1.5 h-1.5 md:w-2 md:h-2 fill-current ${match.status === 'ACTIVE' ? 'animate-pulse' : ''}`} />
+                  <span className="text-[10px] md:text-xs font-black uppercase tracking-widest leading-none">{match.status}</span>
                 </div>
               </div>
             </div>
           </Link>
         ))}
       </div>
+
       {matches.length === 0 && (
-        <div className="flex flex-col items-center justify-center py-20 opacity-20 dark:opacity-10 grayscale">
-          <Swords className="w-12 h-12 mb-4 text-zinc-400" />
-          <span className="text-xs font-black uppercase tracking-[0.5em] text-zinc-500 italic uppercase">ARENA_READY // AWAITING_FIRST_BATTLE</span>
+        <div className="flex flex-col items-center justify-center py-20 text-zinc-500 dark:text-zinc-800">
+          <div className="w-12 h-12 rounded-full bg-zinc-100 dark:bg-zinc-900 flex items-center justify-center mb-4">
+            <Swords className="w-6 h-6" />
+          </div>
+          <p className="text-xs font-black uppercase tracking-widest">No active duels found</p>
         </div>
       )}
     </div>

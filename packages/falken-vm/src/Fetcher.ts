@@ -1,6 +1,9 @@
 import pino from 'pino';
+import crypto from 'node:crypto';
 
 const logger = (pino as any)({ name: 'falken-fetcher' });
+
+const MAX_LOGIC_SIZE = 1024 * 1024; // 1MB limit for game logic
 
 /**
  * Falken IPFS Fetcher
@@ -14,7 +17,7 @@ export class Fetcher {
   ];
 
   /**
-   * Fetches raw JS logic from IPFS with gateway failover.
+   * Fetches raw JS logic from IPFS with gateway failover and size limits.
    */
   async fetchLogic(cid: string): Promise<string> {
     logger.info({ cid }, 'FETCHING_LOGIC_FROM_IPFS');
@@ -26,7 +29,15 @@ export class Fetcher {
         
         if (response.ok) {
           const code = await response.text();
-          logger.info({ cid, gateway }, 'FETCH_SUCCESS');
+          
+          if (code.length > MAX_LOGIC_SIZE) {
+              throw new Error(`Logic exceeds size limit of ${MAX_LOGIC_SIZE} bytes`);
+          }
+
+          // In a full implementation, we would verify the base58 CID against the SHA256 hash here.
+          // For now, we ensure the size is bounded to prevent OOM attacks.
+          
+          logger.info({ cid, gateway, size: code.length }, 'FETCH_SUCCESS');
           return code;
         }
       } catch (err: any) {

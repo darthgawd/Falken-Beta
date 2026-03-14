@@ -5,252 +5,35 @@ import { Reconstructor } from './Reconstructor.js';
 import { Settler } from './Settler.js';
 import { Fetcher } from './Fetcher.js';
 import pino from 'pino';
+import fs from 'fs';
+import path from 'path';
 
 const logger = (pino as any)({ name: 'falken-watcher-v4' });
 
-// V4 PokerEngine ABI
+// Need ABIs for both V4 escrow types
 const POKER_ENGINE_ABI = [
-  // --- EVENTS (BaseEscrow) ---
-  {
-    name: 'MatchCreated',
-    type: 'event',
-    inputs: [
-      { name: 'matchId', type: 'uint256', indexed: true },
-      { name: 'creator', type: 'address', indexed: true },
-      { name: 'stake', type: 'uint256', indexed: false },
-      { name: 'logicId', type: 'bytes32', indexed: true },
-      { name: 'maxPlayers', type: 'uint8', indexed: false },
-      { name: 'maxRounds', type: 'uint8', indexed: false }
-    ]
-  },
-  {
-    name: 'PlayerJoined',
-    type: 'event',
-    inputs: [
-      { name: 'matchId', type: 'uint256', indexed: true },
-      { name: 'player', type: 'address', indexed: true },
-      { name: 'playerIndex', type: 'uint8', indexed: false }
-    ]
-  },
-  {
-    name: 'MatchActivated',
-    type: 'event',
-    inputs: [{ name: 'matchId', type: 'uint256', indexed: true }]
-  },
-  {
-    name: 'MatchSettled',
-    type: 'event',
-    inputs: [
-      { name: 'matchId', type: 'uint256', indexed: true },
-      { name: 'winnerIndices', type: 'uint8[]', indexed: false },
-      { name: 'payout', type: 'uint256', indexed: false },
-      { name: 'rake', type: 'uint256', indexed: false }
-    ]
-  },
-  {
-    name: 'MatchVoided',
-    type: 'event',
-    inputs: [
-      { name: 'matchId', type: 'uint256', indexed: true },
-      { name: 'reason', type: 'string', indexed: false }
-    ]
-  },
-  {
-    name: 'TimeoutClaimed',
-    type: 'event',
-    inputs: [
-      { name: 'matchId', type: 'uint256', indexed: true },
-      { name: 'claimer', type: 'address', indexed: true },
-      { name: 'winnerIndex', type: 'uint8', indexed: false }
-    ]
-  },
-  {
-    name: 'PlayerLeft',
-    type: 'event',
-    inputs: [
-      { name: 'matchId', type: 'uint256', indexed: true },
-      { name: 'player', type: 'address', indexed: true }
-    ]
-  },
-  // --- EVENTS (PokerEngine) ---
-  {
-    name: 'MoveCommitted',
-    type: 'event',
-    inputs: [
-      { name: 'matchId', type: 'uint256', indexed: true },
-      { name: 'round', type: 'uint8', indexed: false },
-      { name: 'player', type: 'address', indexed: true }
-    ]
-  },
-  {
-    name: 'MoveRevealed',
-    type: 'event',
-    inputs: [
-      { name: 'matchId', type: 'uint256', indexed: true },
-      { name: 'round', type: 'uint8', indexed: false },
-      { name: 'player', type: 'address', indexed: true },
-      { name: 'move', type: 'bytes32', indexed: false }
-    ]
-  },
-  {
-    name: 'RoundResolved',
-    type: 'event',
-    inputs: [
-      { name: 'matchId', type: 'uint256', indexed: true },
-      { name: 'round', type: 'uint8', indexed: false },
-      { name: 'winnerIndex', type: 'uint8', indexed: false }
-    ]
-  },
-  {
-    name: 'BetPlaced',
-    type: 'event',
-    inputs: [
-      { name: 'matchId', type: 'uint256', indexed: true },
-      { name: 'player', type: 'address', indexed: true },
-      { name: 'action', type: 'uint8', indexed: false },
-      { name: 'amount', type: 'uint256', indexed: false }
-    ]
-  },
-  {
-    name: 'PlayerFolded',
-    type: 'event',
-    inputs: [
-      { name: 'matchId', type: 'uint256', indexed: true },
-      { name: 'player', type: 'address', indexed: true },
-      { name: 'playerIndex', type: 'uint8', indexed: false }
-    ]
-  },
-  {
-    name: 'StreetAdvanced',
-    type: 'event',
-    inputs: [
-      { name: 'matchId', type: 'uint256', indexed: true },
-      { name: 'round', type: 'uint8', indexed: false },
-      { name: 'newStreet', type: 'uint8', indexed: false }
-    ]
-  },
-  // --- READ FUNCTIONS ---
-  {
-    name: 'getMatch',
-    type: 'function',
-    stateMutability: 'view',
-    inputs: [{ name: 'matchId', type: 'uint256' }],
-    outputs: [{
-      name: '',
-      type: 'tuple',
-      components: [
-        { name: 'players', type: 'address[]' },
-        { name: 'stake', type: 'uint256' },
-        { name: 'totalPot', type: 'uint256' },
-        { name: 'logicId', type: 'bytes32' },
-        { name: 'maxPlayers', type: 'uint8' },
-        { name: 'maxRounds', type: 'uint8' },
-        { name: 'currentRound', type: 'uint8' },
-        { name: 'wins', type: 'uint8[]' },
-        { name: 'drawCounter', type: 'uint8' },
-        { name: 'winsRequired', type: 'uint8' },
-        { name: 'status', type: 'uint8' },
-        { name: 'winner', type: 'address' },
-        { name: 'createdAt', type: 'uint256' }
-      ]
-    }]
-  },
-  {
-    name: 'getPokerState',
-    type: 'function',
-    stateMutability: 'view',
-    inputs: [{ name: 'matchId', type: 'uint256' }],
-    outputs: [{
-      name: '',
-      type: 'tuple',
-      components: [
-        { name: 'phase', type: 'uint8' },
-        { name: 'betStructure', type: 'uint8' },
-        { name: 'maxStreets', type: 'uint8' },
-        { name: 'street', type: 'uint8' },
-        { name: 'activePlayers', type: 'uint8' },
-        { name: 'raiseCount', type: 'uint8' },
-        { name: 'playersToAct', type: 'uint8' },
-        { name: 'currentBet', type: 'uint256' },
-        { name: 'maxBuyIn', type: 'uint256' },
-        { name: 'commitDeadline', type: 'uint256' },
-        { name: 'betDeadline', type: 'uint256' },
-        { name: 'revealDeadline', type: 'uint256' },
-        { name: 'folded', type: 'bool[]' },
-        { name: 'streetBets', type: 'uint256[]' }
-      ]
-    }]
-  },
-  {
-    name: 'roundRevealCount',
-    type: 'function',
-    stateMutability: 'view',
-    inputs: [{ name: 'matchId', type: 'uint256' }, { name: 'round', type: 'uint8' }],
-    outputs: [{ name: '', type: 'uint8' }]
-  },
-  {
-    name: 'matchCounter',
-    type: 'function',
-    stateMutability: 'view',
-    inputs: [],
-    outputs: [{ name: '', type: 'uint256' }]
-  },
-  // --- WRITE FUNCTIONS (Referee only) ---
-  {
-    name: 'resolveRound',
-    type: 'function',
-    stateMutability: 'nonpayable',
-    inputs: [{ name: 'matchId', type: 'uint256' }, { name: 'roundWinnerIdx', type: 'uint8' }],
-    outputs: []
-  },
-  {
-    name: 'resolveRoundSplit',
-    type: 'function',
-    stateMutability: 'nonpayable',
-    inputs: [
-      { name: 'matchId', type: 'uint256' },
-      {
-        name: 'res', type: 'tuple', components: [
-          { name: 'winnerIndices', type: 'uint8[]' },
-          { name: 'splitBps', type: 'uint256[]' }
-        ]
-      }
-    ],
-    outputs: []
-  },
-  {
-    name: 'advanceStreet',
-    type: 'function',
-    stateMutability: 'nonpayable',
-    inputs: [{ name: 'matchId', type: 'uint256' }],
-    outputs: []
-  }
+  { name: 'matchCounter', type: 'function', stateMutability: 'view', inputs: [], outputs: [{ type: 'uint256' }] },
+  { name: 'getMatch', type: 'function', stateMutability: 'view', inputs: [{ name: 'matchId', type: 'uint256' }], outputs: [{ name: '', type: 'tuple', components: [{ name: 'players', type: 'address[]' }, { name: 'stake', type: 'uint256' }, { name: 'totalPot', type: 'uint256' }, { name: 'logicId', type: 'bytes32' }, { name: 'maxPlayers', type: 'uint8' }, { name: 'maxRounds', type: 'uint8' }, { name: 'currentRound', type: 'uint8' }, { name: 'wins', type: 'uint8[]' }, { name: 'drawCounter', type: 'uint8' }, { name: 'winsRequired', type: 'uint8' }, { name: 'status', type: 'uint8' }, { name: 'winner', type: 'address' }, { name: 'createdAt', type: 'uint256' }] }] },
+  { name: 'getPokerState', type: 'function', stateMutability: 'view', inputs: [{ name: 'matchId', type: 'uint256' }], outputs: [{ name: '', type: 'tuple', components: [{ name: 'phase', type: 'uint8' }, { name: 'betStructure', type: 'uint8' }, { name: 'maxStreets', type: 'uint8' }, { name: 'street', type: 'uint8' }, { name: 'activePlayers', type: 'uint8' }, { name: 'raiseCount', type: 'uint8' }, { name: 'playersToAct', type: 'uint8' }, { name: 'currentBet', type: 'uint256' }, { name: 'maxBuyIn', type: 'uint256' }, { name: 'commitDeadline', type: 'uint256' }, { name: 'betDeadline', type: 'uint256' }, { name: 'revealDeadline', type: 'uint256' }, { name: 'folded', type: 'bool[]' }, { name: 'streetBets', type: 'uint256[]' }] }] },
+  { name: 'roundRevealCount', type: 'function', stateMutability: 'view', inputs: [{ name: 'matchId', type: 'uint256' }, { name: 'round', type: 'uint8' }], outputs: [{ type: 'uint8' }] },
+  { name: 'MoveRevealed', type: 'event', inputs: [{ name: 'matchId', type: 'uint256', indexed: true }, { name: 'round', type: 'uint8', indexed: false }, { name: 'player', type: 'address', indexed: true }, { name: 'move', type: 'bytes32', indexed: false }] }
+] as const;
+
+const FISE_ESCROW_ABI = [
+  { name: 'matchCounter', type: 'function', stateMutability: 'view', inputs: [], outputs: [{ type: 'uint256' }] },
+  { name: 'getMatch', type: 'function', stateMutability: 'view', inputs: [{ name: 'matchId', type: 'uint256' }], outputs: [{ name: '', type: 'tuple', components: [{ name: 'players', type: 'address[]' }, { name: 'stake', type: 'uint256' }, { name: 'totalPot', type: 'uint256' }, { name: 'logicId', type: 'bytes32' }, { name: 'maxPlayers', type: 'uint8' }, { name: 'maxRounds', type: 'uint8' }, { name: 'currentRound', type: 'uint8' }, { name: 'wins', type: 'uint8[]' }, { name: 'drawCounter', type: 'uint8' }, { name: 'winsRequired', type: 'uint8' }, { name: 'status', type: 'uint8' }, { name: 'winner', type: 'address' }, { name: 'createdAt', type: 'uint256' }] }] },
+  { name: 'getFiseState', type: 'function', stateMutability: 'view', inputs: [{ name: 'matchId', type: 'uint256' }], outputs: [{ name: '', type: 'tuple', components: [{ name: 'phase', type: 'uint8' }, { name: 'commitDeadline', type: 'uint256' }, { name: 'revealDeadline', type: 'uint256' }] }] },
+  { name: 'roundRevealCount', type: 'function', stateMutability: 'view', inputs: [{ name: 'matchId', type: 'uint256' }, { name: 'round', type: 'uint8' }], outputs: [{ type: 'uint8' }] },
+  { name: 'MoveRevealed', type: 'event', inputs: [{ name: 'matchId', type: 'uint256', indexed: true }, { name: 'round', type: 'uint8', indexed: false }, { name: 'player', type: 'address', indexed: true }, { name: 'move', type: 'bytes32', indexed: false }] }
 ] as const;
 
 const LOGIC_REGISTRY_ABI = [
-  {
-    name: 'getGameLogic',
-    type: 'function',
-    stateMutability: 'view',
-    inputs: [{ name: 'logicId', type: 'bytes32' }],
-    outputs: [{
-      name: '', type: 'tuple', components: [
-        { name: 'ipfsCid', type: 'string' },
-        { name: 'developer', type: 'address' },
-        { name: 'isVerified', type: 'bool' },
-        { name: 'isActive', type: 'bool' },
-        { name: 'bettingEnabled', type: 'bool' },
-        { name: 'maxStreets', type: 'uint8' },
-        { name: 'createdAt', type: 'uint256' },
-        { name: 'totalVolume', type: 'uint256' }
-      ]
-    }]
-  }
+  { name: 'getGameLogic', type: 'function', stateMutability: 'view', inputs: [{ name: 'logicId', type: 'bytes32' }], outputs: [{ name: '', type: 'tuple', components: [{ name: 'ipfsCid', type: 'string' }, { name: 'developer', type: 'address' }, { name: 'isVerified', type: 'bool' }, { name: 'isActive', type: 'bool' }, { name: 'bettingEnabled', type: 'bool' }, { name: 'maxStreets', type: 'uint8' }, { name: 'createdAt', type: 'uint256' }, { name: 'totalVolume', type: 'uint256' }] }] }
 ] as const;
 
-interface ContractConfig {
+export interface EscrowConfig {
   address: `0x${string}`;
-  type: 'POKER_ENGINE';
+  type: 'POKER_ENGINE' | 'FISE_ESCROW';
 }
 
 export class Watcher {
@@ -259,211 +42,259 @@ export class Watcher {
   private reconstructor = new Reconstructor();
   private settler = new Settler();
   private fetcher = new Fetcher();
-  private settledRounds = new Set<string>();
 
-  async start(contracts: ContractConfig[], registryAddress: `0x${string}`) {
+  // Persistence for settled rounds and retries (Fix #14, #15)
+  private stateFilePath = path.join(process.cwd(), '.watcher-state.json');
+  private settledRounds: Set<string> = new Set();
+  private retryQueue: Map<string, { config: EscrowConfig, matchId: bigint, attempts: number, nextRetry: number }> = new Map();
+  private registryAddress: `0x${string}` = '0x0000000000000000000000000000000000000000';
+
+  constructor() {
+    this.loadState();
+    // Start retry queue processor
+    setInterval(() => this.processRetryQueue(), 15000);
+  }
+
+  private loadState() {
+    try {
+      if (fs.existsSync(this.stateFilePath)) {
+        const data = JSON.parse(fs.readFileSync(this.stateFilePath, 'utf8'));
+        this.settledRounds = new Set(data.settledRounds || []);
+        logger.info(`Loaded ${this.settledRounds.size} settled rounds from persistence.`);
+      }
+    } catch (e) {
+      logger.error('Failed to load watcher state');
+    }
+  }
+
+  private saveState() {
+    try {
+      fs.writeFileSync(this.stateFilePath, JSON.stringify({
+        settledRounds: Array.from(this.settledRounds)
+      }));
+    } catch (e) {
+      logger.error('Failed to save watcher state');
+    }
+  }
+
+  async start(contracts: EscrowConfig[], registryAddress: `0x${string}`) {
+    this.settler.initializeRegistry(registryAddress);
+    this.registryAddress = registryAddress;
     logger.info({ contracts, registryAddress }, 'WATCHER_V4_INITIALIZED');
 
-    // Startup scan: Check all active matches that may need resolution
-    for (const contract of contracts) {
-      await this.scanActiveMatches(contract.address, registryAddress);
+    // Startup scan: Check ALL active matches (Fix #16)
+    for (const config of contracts) {
+      await this.scanActiveMatches(config, registryAddress);
     }
 
-    // Watch for new events on all contracts
-    for (const contract of contracts) {
+    // Watch for new events on all contracts (Fix #10)
+    for (const config of contracts) {
+      const abi = config.type === 'POKER_ENGINE' ? POKER_ENGINE_ABI : FISE_ESCROW_ABI;
       this.client.watchContractEvent({
-        address: contract.address,
-        abi: POKER_ENGINE_ABI,
+        address: config.address,
+        abi: abi as any,
         eventName: 'MoveRevealed',
         onLogs: async (logs) => {
           for (const log of logs) {
             const { matchId } = log.args as any;
-            if (matchId) await this.processMatch(BigInt(matchId), contract.address, registryAddress);
+            if (matchId) await this.processMatch(BigInt(matchId), config, registryAddress);
           }
         }
       });
     }
   }
 
-  private async scanActiveMatches(escrowAddress: `0x${string}`, registryAddress: `0x${string}`) {
+  private async scanActiveMatches(config: EscrowConfig, registryAddress: `0x${string}`) {
     try {
+      const abi = config.type === 'POKER_ENGINE' ? POKER_ENGINE_ABI : FISE_ESCROW_ABI;
       const counter = await this.client.readContract({
-        address: escrowAddress,
-        abi: POKER_ENGINE_ABI,
+        address: config.address,
+        abi: abi as any,
         functionName: 'matchCounter'
       }) as bigint;
 
       const matchCount = Number(counter);
-      logger.info({ matchCount, escrowAddress }, 'Scanning active matches...');
+      logger.info({ matchCount, escrowAddress: config.address }, 'Scanning all active matches...');
 
-      // Check last 20 matches for active/reveal phase
-      const start = Math.max(1, matchCount - 20);
-      for (let i = start; i <= matchCount; i++) {
+      // Fix #16: Scan all active matches, not just the last 20
+      for (let i = 1; i <= matchCount; i++) {
         try {
-          // V4: Need both getMatch AND getPokerState
           const matchData = await this.client.readContract({
-            address: escrowAddress,
-            abi: POKER_ENGINE_ABI,
+            address: config.address,
+            abi: abi as any,
             functionName: 'getMatch',
             args: [BigInt(i)]
           }) as any;
 
-          const pokerState = await this.client.readContract({
-            address: escrowAddress,
-            abi: POKER_ENGINE_ABI,
-            functionName: 'getPokerState',
-            args: [BigInt(i)]
-          }) as any;
+          if (Number(matchData.status) !== 1) continue; // Only process ACTIVE matches
 
-          const status = Number(matchData.status);
-          const phase = Number(pokerState.phase);
+          let phase = 0;
+          let activePlayers = matchData.players.length;
 
-          logger.info({ matchId: i, status, phase }, 'Match status check');
+          if (config.type === 'POKER_ENGINE') {
+            const state = await this.client.readContract({ address: config.address, abi: POKER_ENGINE_ABI, functionName: 'getPokerState', args: [BigInt(i)] }) as any;
+            phase = Number(state.phase);
+            activePlayers = Number(state.activePlayers);
+          } else {
+            const state = await this.client.readContract({ address: config.address, abi: FISE_ESCROW_ABI, functionName: 'getFiseState', args: [BigInt(i)] }) as any;
+            phase = Number(state.phase);
+          }
 
-          // Check if match is ACTIVE (1) and in REVEAL phase (2)
-          if (status === 1 && phase === 2) {
-            // V4: Use roundRevealCount instead of looping through players
+          // POKER_ENGINE Reveal is phase 2. FISE_ESCROW Reveal is phase 1.
+          const revealPhase = config.type === 'POKER_ENGINE' ? 2 : 1;
+
+          if (phase === revealPhase) {
             const revealCount = await this.client.readContract({
-              address: escrowAddress,
-              abi: POKER_ENGINE_ABI,
+              address: config.address,
+              abi: abi as any,
               functionName: 'roundRevealCount',
               args: [BigInt(i), matchData.currentRound]
             }) as number;
 
-            const allRevealed = revealCount >= pokerState.activePlayers;
-
-            if (allRevealed) {
+            if (revealCount >= activePlayers) {
               logger.info({ matchId: i }, 'Found match ready for resolution');
-              await this.processMatch(BigInt(i), escrowAddress, registryAddress);
+              await this.processMatch(BigInt(i), config, registryAddress);
             }
           }
         } catch (err) {
-          // Skip errors for individual matches
+          // Skip errors for individual matches to not halt the loop
         }
       }
     } catch (err: any) {
-      logger.error({ err: err.message }, 'Failed to scan active matches');
+      logger.error({ err: err.message, contract: config.address }, 'Failed to scan active matches');
     }
   }
 
-  private async processMatch(onChainMatchId: bigint, escrowAddress: `0x${string}`, registryAddress: `0x${string}`) {
-    const dbMatchId = `${escrowAddress.toLowerCase()}-${onChainMatchId.toString()}`;
+  private async processMatch(onChainMatchId: bigint, config: EscrowConfig, registryAddress: `0x${string}`) {
+    const dbMatchId = `${config.address.toLowerCase()}-${onChainMatchId.toString()}`;
     let currentRoundNum = 0;
+    let currentStreet = 0;
 
     try {
-      // V4: Get both match data and poker state
-      const matchData = await this.client.readContract({
-        address: escrowAddress,
-        abi: POKER_ENGINE_ABI,
-        functionName: 'getMatch',
-        args: [onChainMatchId]
-      }) as any;
-
-      const pokerState = await this.client.readContract({
-        address: escrowAddress,
-        abi: POKER_ENGINE_ABI,
-        functionName: 'getPokerState',
-        args: [onChainMatchId]
-      }) as any;
-
+      logger.info({ matchId: onChainMatchId.toString() }, 'PROCESS_MATCH_START');
+      const abi = config.type === 'POKER_ENGINE' ? POKER_ENGINE_ABI : FISE_ESCROW_ABI;
+      
+      logger.info({ matchId: onChainMatchId.toString() }, 'FETCHING_MATCH_DATA');
+      const matchData = await this.client.readContract({ address: config.address, abi: abi as any, functionName: 'getMatch', args: [onChainMatchId] }) as any;
+      logger.info({ matchId: onChainMatchId.toString(), players: matchData.players?.length }, 'GOT_MATCH_DATA');
+      
       const { players, currentRound, status, logicId, stake } = matchData;
-      const { phase, street, maxStreets, activePlayers } = pokerState;
-
       currentRoundNum = Number(currentRound);
 
-      // Only process if match is ACTIVE (1) and in REVEAL phase (2)
-      if (Number(status) !== 1 || Number(phase) !== 2) return;
+      let phase = 0;
+      let activePlayers = players.length;
+      let maxStreets = 1;
 
-      // V4: Use street in the round key for multi-street support
-      const roundKey = `${onChainMatchId}-${currentRoundNum}-${street}`;
-      if (this.settledRounds.has(roundKey)) return;
+      if (config.type === 'POKER_ENGINE') {
+        logger.info({ matchId: onChainMatchId.toString() }, 'FETCHING_POKER_STATE');
+        const state = await this.client.readContract({ address: config.address, abi: POKER_ENGINE_ABI, functionName: 'getPokerState', args: [onChainMatchId] }) as any;
+        logger.info({ matchId: onChainMatchId.toString(), phase: Number(state.phase), street: Number(state.street) }, 'GOT_POKER_STATE');
+        phase = Number(state.phase);
+        currentStreet = Number(state.street);
+        activePlayers = Number(state.activePlayers);
+        maxStreets = Number(state.maxStreets);
+      } else {
+        const state = await this.client.readContract({ address: config.address, abi: FISE_ESCROW_ABI, functionName: 'getFiseState', args: [onChainMatchId] }) as any;
+        phase = Number(state.phase);
+      }
 
-      // V4: Check if ALL players revealed using roundRevealCount
-      const revealCount = await this.client.readContract({
-        address: escrowAddress,
-        abi: POKER_ENGINE_ABI,
-        functionName: 'roundRevealCount',
-        args: [onChainMatchId, currentRound]
-      }) as number;
-
-      const allRevealed = revealCount >= activePlayers;
-
-      if (!allRevealed) return;
-
-      this.settledRounds.add(roundKey);
-      logger.info({ matchId: onChainMatchId.toString(), round: currentRoundNum, street }, 'ALL_PLAYERS_REVEALED // Processing');
-
-      // 2. Wait for indexer to sync revealed moves to DB
-      const { moves } = await this.getSyncedMoves(dbMatchId, players.length);
-
-      if (moves.length < players.length) {
-        logger.warn({ matchId: onChainMatchId.toString(), round: currentRoundNum, dbMoves: moves.length }, 'DB_NOT_SYNCED // Waiting for indexer');
-        this.settledRounds.delete(roundKey);
+      const revealPhase = config.type === 'POKER_ENGINE' ? 2 : 1;
+      logger.info({ matchId: onChainMatchId.toString(), status: Number(status), phase, revealPhase }, 'CHECKING_STATUS_PHASE');
+      if (Number(status) !== 1 || phase !== revealPhase) {
+        logger.info({ matchId: onChainMatchId.toString() }, 'EARLY_RETURN_STATUS_PHASE');
         return;
       }
 
-      // 3. Fetch logic from IPFS
-      const logicEntry = await this.client.readContract({
-        address: registryAddress,
-        abi: LOGIC_REGISTRY_ABI,
-        functionName: 'getGameLogic',
-        args: [logicId]
-      }) as any;
+      const roundKey = `${onChainMatchId}-${currentRoundNum}-${currentStreet}`;
+      if (this.settledRounds.has(roundKey)) {
+        logger.info({ matchId: onChainMatchId.toString(), roundKey }, 'EARLY_RETURN_ALREADY_SETTLED');
+        return;
+      }
 
-      const ipfsCID = logicEntry[0];
+      const revealCount = await this.client.readContract({ address: config.address, abi: abi as any, functionName: 'roundRevealCount', args: [onChainMatchId, currentRound] }) as number;
+      if (revealCount < activePlayers) return;
 
+      this.settledRounds.add(roundKey);
+      this.saveState(); // Persist that we are handling this
+
+      logger.info({ matchId: onChainMatchId.toString(), round: currentRoundNum, street: currentStreet }, 'ALL_PLAYERS_REVEALED // Processing');
+
+      const expectedMoves = Number(activePlayers);
+      const { moves } = await this.getSyncedMoves(dbMatchId, expectedMoves, config.address, onChainMatchId);
+
+      if (moves.length < expectedMoves) {
+        logger.warn({ matchId: onChainMatchId.toString(), round: currentRoundNum }, 'DB_NOT_SYNCED');
+        this.settledRounds.delete(roundKey);
+        this.saveState();
+        return;
+      }
+
+      const logicEntry = await this.client.readContract({ address: registryAddress, abi: LOGIC_REGISTRY_ABI, functionName: 'getGameLogic', args: [logicId] }) as any;
+      const ipfsCID = logicEntry.ipfsCid;
       if (!ipfsCID) throw new Error("EMPTY_CID_IN_REGISTRY");
 
       const jsCode = await this.fetcher.fetchLogic(ipfsCID);
 
-      // V4: Pass street and maxStreets in context
       const refereeContext = {
         players: players.map((p: string) => p.toLowerCase()),
         stake: stake.toString(),
         matchId: onChainMatchId.toString(),
         round: currentRoundNum,
-        config: { street, maxStreets }
+        config: { street: currentStreet, maxStreets }
       };
 
-      logger.info({ dbMatchId, movesCount: moves.length, street, maxStreets }, 'REFEREE_INPUT');
       const resolution = await this.referee.resolveRound(jsCode, refereeContext, moves);
 
       if (resolution) {
-        logger.info({ dbMatchId, winner: resolution.winner, description: resolution.description }, 'ROUND_RESOLVED');
-
-        // V4: Pass street and maxStreets to settler for routing
-        await this.settler.settle(
-          escrowAddress,
-          onChainMatchId,
-          resolution,
-          street,
-          maxStreets,
-          resolution.description
-        );
+        logger.info({ dbMatchId, winner: resolution.winner }, 'ROUND_RESOLVED');
+        await this.settler.settle(config, onChainMatchId, resolution, currentStreet, maxStreets, resolution.description);
       } else {
-        await this.settler.settle(
-          escrowAddress,
-          onChainMatchId,
-          { winner: 255, description: "Round logic pending." },
-          street,
-          maxStreets
-        );
+        await this.settler.settle(config, onChainMatchId, { winner: 255, description: "Pending." }, currentStreet, maxStreets);
       }
+      
+      // Cleanup retry queue on success
+      this.retryQueue.delete(roundKey);
 
-      setTimeout(() => this.settledRounds.delete(roundKey), 60_000);
     } catch (err: any) {
       logger.error({ matchId: onChainMatchId.toString(), err: err.message }, 'VM_PROCESSING_FAULT');
-      if (currentRoundNum > 0) {
-        // V4: Include street in cleanup (we need to know street, use 0 as fallback)
-        this.settledRounds.delete(`${onChainMatchId}-${currentRoundNum}-0`);
+      
+      // Fix #15: Add to retry queue instead of dropping
+      const roundKey = `${onChainMatchId}-${currentRoundNum}-${currentStreet}`;
+      this.settledRounds.delete(roundKey); // Allow retry
+      this.saveState();
+
+      const existingRetry = this.retryQueue.get(roundKey);
+      const attempts = existingRetry ? existingRetry.attempts + 1 : 1;
+      
+      if (attempts <= 5) {
+        const backoffMs = Math.min(1000 * Math.pow(2, attempts), 60000); // Exponential backoff up to 60s
+        logger.info({ matchId: onChainMatchId.toString(), attempts, nextRetryIn: backoffMs/1000 }, 'Added to retry queue');
+        this.retryQueue.set(roundKey, {
+          config,
+          matchId: onChainMatchId,
+          attempts,
+          nextRetry: Date.now() + backoffMs
+        });
+      } else {
+        logger.error({ matchId: onChainMatchId.toString() }, 'Max settlement retries reached. Manual intervention required.');
       }
     }
   }
 
-  private async getSyncedMoves(dbMatchId: string, expectedCount: number, maxRetries = 10, delayMs = 2000) {
+  private async processRetryQueue() {
+    const now = Date.now();
+    for (const [key, retry] of this.retryQueue.entries()) {
+      if (now >= retry.nextRetry) {
+        logger.info({ matchId: retry.matchId.toString() }, 'Processing retry queue item');
+        await this.processMatch(retry.matchId, retry.config, this.registryAddress);
+      }
+    }
+  }
+
+  private async getSyncedMoves(dbMatchId: string, expectedCount: number, escrowAddress: `0x${string}`, onChainMatchId: bigint, maxRetries = 10, delayMs = 2000) {
     for (let attempt = 0; attempt < maxRetries; attempt++) {
       try {
-        const result = await this.reconstructor.getMatchHistory(dbMatchId);
+        const result = await this.reconstructor.getMatchHistory(dbMatchId, escrowAddress, onChainMatchId);
         if (result.moves && result.moves.length >= expectedCount) return result;
         await new Promise(r => setTimeout(r, delayMs));
       } catch (err: any) {

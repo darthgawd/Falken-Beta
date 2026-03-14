@@ -719,41 +719,19 @@ contract PokerEngineTest is Test {
     }
 
     function test_CommitMove_NotActive_Settled() public {
-        // Create match with winsRequired=1 so single win settles
-        vm.prank(player1);
-        poker.createMatch(100 * 1e6, LOGIC_ID_POKER, 2, 1, 10, 1000 * 1e6, PokerEngine.BetStructure.NO_LIMIT);
-        vm.prank(player2);
-        poker.joinMatch(1);
-        
-        // Play and settle
-        bytes32 move1 = bytes32(uint256(1));
-        bytes32 salt1 = bytes32(uint256(111));
-        bytes32 move2 = bytes32(uint256(2));
-        bytes32 salt2 = bytes32(uint256(222));
-        
-        bytes32 h1 = keccak256(abi.encodePacked("FALKEN_V4", address(poker), uint256(1), uint256(1), player1, move1, salt1));
-        bytes32 h2 = keccak256(abi.encodePacked("FALKEN_V4", address(poker), uint256(1), uint256(1), player2, move2, salt2));
-        
-        vm.prank(player1);
-        poker.commitMove(1, h1);
-        vm.prank(player2);
-        poker.commitMove(1, h2);
-        vm.prank(player1);
-        poker.check(1);
-        vm.prank(player2);
-        poker.check(1);
-        vm.prank(player1);
-        poker.revealMove(1, move1, salt1);
-        vm.prank(player2);
-        poker.revealMove(1, move2, salt2);
-        
+        // Create match with winsRequired=1 so single win settles (1-street game)
+        _createAndJoinMatchDraw();
+        _commitBothPlayers(1);
+        _checkBothPlayers(1);
+        _revealBothPlayers(1);
+
         vm.prank(referee);
         poker.resolveRound(1, 0); // Settles (winsRequired=1)
         
         // Try to commit after match settled
         vm.prank(player1);
         vm.expectRevert("Not active");
-        poker.commitMove(1, h1);
+        poker.commitMove(1, keccak256("any"));
     }
 
     function test_CommitMove_NotPlayer() public {
@@ -1136,22 +1114,15 @@ contract PokerEngineTest is Test {
     }
 
     function test_AdvanceStreet_NotActive() public {
-        _setupRevealPhase();
-        
-        // Reveal both (use correct values: move1=5, salt1=111, move2=7, salt2=222)
-        bytes32 move1 = bytes32(uint256(5));
-        bytes32 salt1 = bytes32(uint256(111));
-        bytes32 move2 = bytes32(uint256(7));
-        bytes32 salt2 = bytes32(uint256(222));
-        vm.prank(player1);
-        poker.revealMove(1, move1, salt1);
-        vm.prank(player2);
-        poker.revealMove(1, move2, salt2);
-        
-        // Resolve with winner to settle (winsRequired=1 by default)
+        // Use 1-street game to settle via resolveRound, then verify advanceStreet reverts
+        _createAndJoinMatchDraw();
+        _commitBothPlayers(1);
+        _checkBothPlayers(1);
+        _revealBothPlayers(1);
+
         vm.prank(referee);
         poker.resolveRound(1, 0); // Settles the match
-        
+
         // Try to advance street after match settled
         vm.prank(referee);
         vm.expectRevert("Not active");
@@ -1174,37 +1145,15 @@ contract PokerEngineTest is Test {
     }
 
     function test_ResolveRound_NotActive() public {
-        // Create match with winsRequired=1
-        vm.prank(player1);
-        poker.createMatch(100 * 1e6, LOGIC_ID_POKER, 2, 1, 10, 1000 * 1e6, PokerEngine.BetStructure.NO_LIMIT);
-        vm.prank(player2);
-        poker.joinMatch(1);
-        
-        // Setup and complete first round
-        bytes32 move1 = bytes32(uint256(1));
-        bytes32 salt1 = bytes32(uint256(111));
-        bytes32 move2 = bytes32(uint256(2));
-        bytes32 salt2 = bytes32(uint256(222));
-        
-        bytes32 h1 = keccak256(abi.encodePacked("FALKEN_V4", address(poker), uint256(1), uint256(1), player1, move1, salt1));
-        bytes32 h2 = keccak256(abi.encodePacked("FALKEN_V4", address(poker), uint256(1), uint256(1), player2, move2, salt2));
-        
-        vm.prank(player1);
-        poker.commitMove(1, h1);
-        vm.prank(player2);
-        poker.commitMove(1, h2);
-        vm.prank(player1);
-        poker.check(1);
-        vm.prank(player2);
-        poker.check(1);
-        vm.prank(player1);
-        poker.revealMove(1, move1, salt1);
-        vm.prank(player2);
-        poker.revealMove(1, move2, salt2);
-        
+        // Use 1-street game to settle via resolveRound, then verify second call reverts
+        _createAndJoinMatchDraw();
+        _commitBothPlayers(1);
+        _checkBothPlayers(1);
+        _revealBothPlayers(1);
+
         vm.prank(referee);
         poker.resolveRound(1, 0); // Settles (winsRequired=1)
-        
+
         vm.prank(referee);
         vm.expectRevert("Not active");
         poker.resolveRound(1, 0);
@@ -1226,27 +1175,21 @@ contract PokerEngineTest is Test {
     }
 
     function test_ResolveRound_InvalidWinner() public {
-        _setupRevealPhase();
-        
-        // Use correct values: move1=5, salt1=111, move2=7, salt2=222
-        bytes32 move1 = bytes32(uint256(5));
-        bytes32 salt1 = bytes32(uint256(111));
-        bytes32 move2 = bytes32(uint256(7));
-        bytes32 salt2 = bytes32(uint256(222));
-        vm.prank(player1);
-        poker.revealMove(1, move1, salt1);
-        vm.prank(player2);
-        poker.revealMove(1, move2, salt2);
-        
+        // Use 1-street game so resolveRound is on the final street
+        _createAndJoinMatchDraw();
+        _commitBothPlayers(1);
+        _checkBothPlayers(1);
+        _revealBothPlayers(1);
+
         vm.prank(referee);
         vm.expectRevert("Invalid winner");
         poker.resolveRound(1, 5); // Invalid index (only 2 players)
     }
 
     function test_ResolveRound_WinnerFolded() public {
-        // Need 3 players so match continues after fold
+        // Need 3 players so match continues after fold (1-street game)
         vm.prank(player1);
-        poker.createMatch(100 * 1e6, LOGIC_ID_POKER, 3, 1, 10, 1000 * 1e6, PokerEngine.BetStructure.NO_LIMIT);
+        poker.createMatch(100 * 1e6, LOGIC_ID_DRAW, 3, 1, 10, 1000 * 1e6, PokerEngine.BetStructure.NO_LIMIT);
         vm.prank(player2);
         poker.joinMatch(1);
         vm.prank(player3);
@@ -1586,10 +1529,11 @@ contract PokerEngineTest is Test {
 
     function test_ResolveRound_MostWins() public {
         // Create match with winsRequired = 10 (so we can play 10 rounds without settling)
+        // Use 1-street game (LOGIC_ID_DRAW) so resolveRound is valid on street 0
         vm.prank(player1);
         poker.createMatch(
             100 * 1e6,
-            LOGIC_ID_POKER,
+            LOGIC_ID_DRAW,
             2,
             10, // winsRequired = 10
             10,
@@ -1697,10 +1641,11 @@ contract PokerEngineTest is Test {
 
     function test_ResolveRound_StartNextRound() public {
         // Create match with winsRequired=2, maxRounds=3 (so 1 win doesn't settle)
+        // Use 1-street game (LOGIC_ID_DRAW) so resolveRound is valid on final street
         vm.prank(player1);
         poker.createMatch(
             100 * 1e6,
-            LOGIC_ID_POKER,
+            LOGIC_ID_DRAW,
             2,
             2,  // winsRequired=2
             3,  // maxRounds=3
@@ -2412,6 +2357,362 @@ contract PokerEngineTest is Test {
         vm.prank(referee);
         vm.expectRevert("Winner folded");
         poker.resolveRoundSplit(1, _makeSplitRes(1, 0, 5000, 5000));
+    }
+
+    // ==================== MULTI-ROUND FOLD TESTS ====================
+
+    function test_Fold_Awards_Round_Win_Continues() public {
+        // winsRequired=2, maxRounds=3: fold in round 1 awards a round win and starts round 2
+        vm.prank(player1);
+        poker.createMatch(100 * 1e6, LOGIC_ID_DRAW, 2, 2, 3, 1000 * 1e6, PokerEngine.BetStructure.NO_LIMIT);
+        vm.prank(player2);
+        poker.joinMatch(1);
+
+        _advanceToBetPhase(1);
+
+        vm.prank(player1);
+        poker.fold(1);
+
+        // Match must NOT be settled — round win awarded, next round started
+        IBaseEscrow.BaseMatch memory m = poker.getMatch(1);
+        assertEq(uint8(m.status), uint8(IBaseEscrow.MatchStatus.ACTIVE));
+        assertEq(m.currentRound, 2);
+        assertEq(m.wins[1], 1); // player2 (index 1) won round 1
+
+        // Poker state reset for new round
+        PokerEngine.PokerState memory ps = poker.getPokerState(1);
+        assertEq(uint8(ps.phase), uint8(PokerEngine.Phase.COMMIT));
+        assertEq(ps.activePlayers, 2);
+        assertFalse(ps.folded[0]);
+        assertFalse(ps.folded[1]);
+    }
+
+    function test_Fold_Awards_Round_Win_Settles() public {
+        // winsRequired=2, maxRounds=4: fold twice → player2 reaches 2 wins → match settles
+        vm.prank(player1);
+        poker.createMatch(100 * 1e6, LOGIC_ID_DRAW, 2, 2, 4, 1000 * 1e6, PokerEngine.BetStructure.NO_LIMIT);
+        vm.prank(player2);
+        poker.joinMatch(1);
+
+        // Round 1: player1 folds → player2 wins round (1 win, needs 2)
+        _advanceToBetPhase(1);
+        vm.prank(player1);
+        poker.fold(1);
+
+        IBaseEscrow.BaseMatch memory m = poker.getMatch(1);
+        assertEq(uint8(m.status), uint8(IBaseEscrow.MatchStatus.ACTIVE));
+        assertEq(m.wins[1], 1);
+
+        // Round 2: player1 folds again → player2 gets 2nd win → match settles
+        _advanceToBetPhase(1);
+        vm.prank(player1);
+        poker.fold(1);
+
+        m = poker.getMatch(1);
+        assertEq(uint8(m.status), uint8(IBaseEscrow.MatchStatus.SETTLED));
+        assertEq(m.winner, player2);
+        assertEq(m.wins[1], 2);
+    }
+
+    function test_Fold_AfterBetDeadline_Reverts() public {
+        _setupBetPhase();
+
+        // Warp past the bet deadline
+        vm.warp(block.timestamp + 31 minutes);
+
+        vm.prank(player1);
+        vm.expectRevert("Bet timed out");
+        poker.fold(1);
+    }
+
+    // ==================== RESOLVE ROUND STREET GUARD TESTS ====================
+
+    function test_ResolveRound_IntermediateStreet_Reverts() public {
+        // 4-street game: calling resolveRound on street 0 (not the final street) must revert
+        _createAndJoinMatch(); // LOGIC_ID_POKER = 4 streets
+
+        bytes32 move1 = bytes32(uint256(5)); bytes32 salt1 = bytes32(uint256(111));
+        bytes32 move2 = bytes32(uint256(7)); bytes32 salt2 = bytes32(uint256(222));
+
+        bytes32 h1 = keccak256(abi.encodePacked("FALKEN_V4", address(poker), uint256(1), uint256(1), player1, move1, salt1));
+        bytes32 h2 = keccak256(abi.encodePacked("FALKEN_V4", address(poker), uint256(1), uint256(1), player2, move2, salt2));
+
+        vm.prank(player1); poker.commitMove(1, h1);
+        vm.prank(player2); poker.commitMove(1, h2);
+        vm.prank(player1); poker.check(1);
+        vm.prank(player2); poker.check(1);
+        vm.prank(player1); poker.revealMove(1, move1, salt1);
+        vm.prank(player2); poker.revealMove(1, move2, salt2);
+
+        // street=0, maxStreets=4 — referee must call advanceStreet here, not resolveRound
+        vm.prank(referee);
+        vm.expectRevert("Not on final street");
+        poker.resolveRound(1, 0);
+    }
+
+    // ==================== RESOLVE ROUND SPLIT MULTI-ROUND TESTS ====================
+
+    function test_ResolveRoundSplit_TerminatesMultiRoundMatch() public {
+        // Documents design: resolveRoundSplit always settles the match immediately,
+        // even in a multi-round game (winsRequired=3). Use resolveRound(255) instead
+        // to record a draw and continue play.
+        vm.prank(player1);
+        poker.createMatch(100 * 1e6, LOGIC_ID_DRAW, 2, 3, 5, 1000 * 1e6, PokerEngine.BetStructure.NO_LIMIT);
+        vm.prank(player2);
+        poker.joinMatch(1);
+
+        _commitBothPlayers(1);
+        _checkBothPlayers(1);
+        _revealBothPlayers(1);
+
+        // Round 1 of a 3-wins-required match: split settles match immediately
+        vm.prank(referee);
+        poker.resolveRoundSplit(1, _makeSplitRes(0, 1, 5000, 5000));
+
+        IBaseEscrow.BaseMatch memory m = poker.getMatch(1);
+        assertEq(uint8(m.status), uint8(IBaseEscrow.MatchStatus.SETTLED));
+        assertEq(m.currentRound, 1); // match ended after round 1 despite winsRequired=3
+    }
+
+    // ==================== END-TO-END MULTI-ROUND TESTS ====================
+
+    function test_EndToEnd_BestOf3() public {
+        // winsRequired=2, maxRounds=3: player1 wins rounds 1 and 3, player2 wins round 2
+        vm.prank(player1);
+        poker.createMatch(100 * 1e6, LOGIC_ID_DRAW, 2, 2, 3, 1000 * 1e6, PokerEngine.BetStructure.NO_LIMIT);
+        vm.prank(player2);
+        poker.joinMatch(1);
+
+        // Round 1: player1 wins
+        _playFullRound(1, 1, 0);
+        IBaseEscrow.BaseMatch memory m = poker.getMatch(1);
+        assertEq(m.currentRound, 2);
+        assertEq(uint8(m.status), uint8(IBaseEscrow.MatchStatus.ACTIVE));
+        assertEq(m.wins[0], 1);
+
+        // Round 2: player2 wins
+        _playFullRound(1, 2, 1);
+        m = poker.getMatch(1);
+        assertEq(m.currentRound, 3);
+        assertEq(uint8(m.status), uint8(IBaseEscrow.MatchStatus.ACTIVE));
+        assertEq(m.wins[1], 1);
+
+        // Round 3: player1 wins → wins[0]=2 >= winsRequired=2 → match settles
+        uint256 p1Before = usdc.balanceOf(player1);
+        _playFullRound(1, 3, 0);
+
+        m = poker.getMatch(1);
+        assertEq(uint8(m.status), uint8(IBaseEscrow.MatchStatus.SETTLED));
+        assertEq(m.winner, player1);
+        assertEq(m.wins[0], 2);
+
+        // Pot = 200 USDC, rake = 7.5% = 15 USDC, remaining = 185 USDC to player1
+        assertEq(usdc.balanceOf(player1) - p1Before, 185 * 1e6);
+    }
+
+    /**
+     * @dev Play a complete 1-street round with a known winner for use in multi-round tests.
+     * Uses unique move/salt values per round to avoid commit hash collisions.
+     */
+    function _playFullRound(uint256 matchId, uint256 round, uint8 winnerIdx) internal {
+        bytes32 move1 = bytes32(uint256(round * 10 + 1));
+        bytes32 salt1 = bytes32(uint256(round * 100 + 11));
+        bytes32 move2 = bytes32(uint256(round * 10 + 2));
+        bytes32 salt2 = bytes32(uint256(round * 100 + 22));
+
+        bytes32 h1 = keccak256(abi.encodePacked("FALKEN_V4", address(poker), matchId, round, player1, move1, salt1));
+        bytes32 h2 = keccak256(abi.encodePacked("FALKEN_V4", address(poker), matchId, round, player2, move2, salt2));
+
+        vm.prank(player1); poker.commitMove(matchId, h1);
+        vm.prank(player2); poker.commitMove(matchId, h2);
+        vm.prank(player1); poker.check(matchId);
+        vm.prank(player2); poker.check(matchId);
+        vm.prank(player1); poker.revealMove(matchId, move1, salt1);
+        vm.prank(player2); poker.revealMove(matchId, move2, salt2);
+        vm.prank(referee); poker.resolveRound(matchId, winnerIdx);
+    }
+
+    // ==================== 5-CARD DRAW TESTS ====================
+    // 5-Card Draw = maxStreets=1 in FALKEN. One betting round.
+    // Flow: COMMIT discard bitmask → BET (on original hand) → REVEAL discard → referee resolves.
+    // Move encoding: bytes32 bitmask where bit N = discard card at index N.
+    //   0x00 = STAY (keep all 5)
+    //   0x01 = discard index 0 only
+    //   0x07 = discard indices 0,1,2
+    //   0x1f = discard all 5 (31)
+
+    function test_Draw_Stay_vs_Stay() public {
+        // Both players keep all cards (bitmask 0). Referee determines winner from original hands.
+        bytes32 p1Discard = bytes32(0);           // STAY
+        bytes32 p2Discard = bytes32(0);           // STAY
+        bytes32 salt1 = bytes32(uint256(0xABC1));
+        bytes32 salt2 = bytes32(uint256(0xABC2));
+
+        _createAndJoinMatchDraw();
+
+        bytes32 h1 = keccak256(abi.encodePacked("FALKEN_V4", address(poker), uint256(1), uint256(1), player1, p1Discard, salt1));
+        bytes32 h2 = keccak256(abi.encodePacked("FALKEN_V4", address(poker), uint256(1), uint256(1), player2, p2Discard, salt2));
+
+        vm.prank(player1); poker.commitMove(1, h1);
+        vm.prank(player2); poker.commitMove(1, h2);
+
+        // Both check — betting on original hands before discard is revealed
+        vm.prank(player1); poker.check(1);
+        vm.prank(player2); poker.check(1);
+
+        vm.prank(player1); poker.revealMove(1, p1Discard, salt1);
+        vm.prank(player2); poker.revealMove(1, p2Discard, salt2);
+
+        // Referee evaluates final hands (same as original since both stayed) — player1 wins
+        vm.prank(referee); poker.resolveRound(1, 0);
+
+        IBaseEscrow.BaseMatch memory m = poker.getMatch(1);
+        assertEq(uint8(m.status), uint8(IBaseEscrow.MatchStatus.SETTLED));
+        assertEq(m.winner, player1);
+    }
+
+    function test_Draw_PartialDiscard_vs_FullDiscard() public {
+        // player1 keeps 2 cards (discard 3), player2 discards all 5
+        bytes32 p1Discard = bytes32(uint256(0x07)); // discard indices 0,1,2 — keep indices 3,4
+        bytes32 p2Discard = bytes32(uint256(0x1f)); // discard all 5 (31)
+        bytes32 salt1 = bytes32(uint256(0xDEAD1));
+        bytes32 salt2 = bytes32(uint256(0xDEAD2));
+
+        _createAndJoinMatchDraw();
+
+        bytes32 h1 = keccak256(abi.encodePacked("FALKEN_V4", address(poker), uint256(1), uint256(1), player1, p1Discard, salt1));
+        bytes32 h2 = keccak256(abi.encodePacked("FALKEN_V4", address(poker), uint256(1), uint256(1), player2, p2Discard, salt2));
+
+        vm.prank(player1); poker.commitMove(1, h1);
+        vm.prank(player2); poker.commitMove(1, h2);
+
+        // Betting on original hands — discards are still sealed
+        vm.prank(player1); poker.check(1);
+        vm.prank(player2); poker.check(1);
+
+        vm.prank(player1); poker.revealMove(1, p1Discard, salt1);
+        vm.prank(player2); poker.revealMove(1, p2Discard, salt2);
+
+        // Referee evaluates post-draw hands off-chain, submits result
+        vm.prank(referee); poker.resolveRound(1, 0); // player1 wins
+
+        IBaseEscrow.BaseMatch memory m = poker.getMatch(1);
+        assertEq(uint8(m.status), uint8(IBaseEscrow.MatchStatus.SETTLED));
+        assertEq(m.winner, player1);
+    }
+
+    function test_Draw_BettingOnOriginalHand_Raise_And_Call() public {
+        // player1 has a strong hand (stays), raises. player2 is drawing (discards 3), calls.
+        bytes32 p1Discard = bytes32(0);             // STAY — confident in hand
+        bytes32 p2Discard = bytes32(uint256(0x07)); // discard 3 cards
+        bytes32 salt1 = bytes32(uint256(0xBEEF1));
+        bytes32 salt2 = bytes32(uint256(0xBEEF2));
+
+        _createAndJoinMatchDraw();
+
+        bytes32 h1 = keccak256(abi.encodePacked("FALKEN_V4", address(poker), uint256(1), uint256(1), player1, p1Discard, salt1));
+        bytes32 h2 = keccak256(abi.encodePacked("FALKEN_V4", address(poker), uint256(1), uint256(1), player2, p2Discard, salt2));
+
+        vm.prank(player1); poker.commitMove(1, h1);
+        vm.prank(player2); poker.commitMove(1, h2);
+
+        // player1 raises 50 USDC on strong hand (discard still sealed)
+        vm.prank(player1); poker.raise(1, 50 * 1e6);
+        // player2 calls — willing to pay to draw
+        vm.prank(player2); poker.call(1);
+
+        // Pot now = 200 (stakes) + 50 (p1 raise) + 50 (p2 call) = 300 USDC
+        IBaseEscrow.BaseMatch memory m = poker.getMatch(1);
+        assertEq(m.totalPot, 300 * 1e6);
+
+        vm.prank(player1); poker.revealMove(1, p1Discard, salt1);
+        vm.prank(player2); poker.revealMove(1, p2Discard, salt2);
+
+        uint256 p1Before = usdc.balanceOf(player1);
+        vm.prank(referee); poker.resolveRound(1, 0); // player1's strong hand wins
+
+        // Pot = 300, rake = 7.5% = 22.5, player1 gets 277.5
+        assertEq(usdc.balanceOf(player1) - p1Before, 277_500_000);
+    }
+
+    function test_Draw_BettingOnOriginalHand_Fold() public {
+        // player2 commits a large discard (weak hand), player1 raises, player2 folds
+        bytes32 p1Discard = bytes32(0);             // STAY
+        bytes32 p2Discard = bytes32(uint256(0x1f)); // discard all — very weak hand
+        bytes32 salt1 = bytes32(uint256(0xCAFE1));
+        bytes32 salt2 = bytes32(uint256(0xCAFE2));
+
+        vm.prank(player1);
+        poker.createMatch(100 * 1e6, LOGIC_ID_DRAW, 2, 2, 4, 1000 * 1e6, PokerEngine.BetStructure.NO_LIMIT);
+        vm.prank(player2);
+        poker.joinMatch(1);
+
+        bytes32 h1 = keccak256(abi.encodePacked("FALKEN_V4", address(poker), uint256(1), uint256(1), player1, p1Discard, salt1));
+        bytes32 h2 = keccak256(abi.encodePacked("FALKEN_V4", address(poker), uint256(1), uint256(1), player2, p2Discard, salt2));
+
+        vm.prank(player1); poker.commitMove(1, h1);
+        vm.prank(player2); poker.commitMove(1, h2);
+
+        // player1 raises, player2 folds rather than call with a weak hand they plan to fully replace
+        vm.prank(player1); poker.raise(1, 50 * 1e6);
+        vm.prank(player2); poker.fold(1);
+
+        // winsRequired=2 so fold awards round win, not entire match
+        IBaseEscrow.BaseMatch memory m = poker.getMatch(1);
+        assertEq(uint8(m.status), uint8(IBaseEscrow.MatchStatus.ACTIVE));
+        assertEq(m.wins[0], 1); // player1 won the round via fold
+        assertEq(m.currentRound, 2);
+    }
+
+    function test_Draw_RevealWrongDiscard_Reverts() public {
+        // Committing one bitmask but revealing a different one should revert
+        bytes32 committed = bytes32(uint256(0x07)); // committed: discard 3 cards
+        bytes32 revealed  = bytes32(uint256(0x01)); // revealed:  discard 1 card — mismatch
+        bytes32 salt = bytes32(uint256(0xBAD1));
+
+        _createAndJoinMatchDraw();
+
+        bytes32 h1 = keccak256(abi.encodePacked("FALKEN_V4", address(poker), uint256(1), uint256(1), player1, committed, salt));
+        bytes32 h2 = keccak256(abi.encodePacked("FALKEN_V4", address(poker), uint256(1), uint256(1), player2, bytes32(0), salt));
+
+        vm.prank(player1); poker.commitMove(1, h1);
+        vm.prank(player2); poker.commitMove(1, h2);
+        vm.prank(player1); poker.check(1);
+        vm.prank(player2); poker.check(1);
+
+        // player1 tries to lie about their discard
+        vm.prank(player1);
+        vm.expectRevert("Invalid reveal");
+        poker.revealMove(1, revealed, salt);
+    }
+
+    function test_Draw_AllBitmaskValues_StayToDiscardAll() public {
+        // Verify the contract accepts any valid bitmask (0x00 through 0x1f = 0 to 31)
+        // and that commits/reveals work correctly for each extreme
+        bytes32[2] memory discards = [bytes32(0), bytes32(uint256(31))];
+        bytes32[2] memory salts = [bytes32(uint256(0x111)), bytes32(uint256(0x222))];
+
+        _createAndJoinMatchDraw();
+
+        bytes32 h1 = keccak256(abi.encodePacked("FALKEN_V4", address(poker), uint256(1), uint256(1), player1, discards[0], salts[0]));
+        bytes32 h2 = keccak256(abi.encodePacked("FALKEN_V4", address(poker), uint256(1), uint256(1), player2, discards[1], salts[1]));
+
+        vm.prank(player1); poker.commitMove(1, h1);
+        vm.prank(player2); poker.commitMove(1, h2);
+        vm.prank(player1); poker.check(1);
+        vm.prank(player2); poker.check(1);
+
+        // Both reveals should succeed
+        vm.prank(player1); poker.revealMove(1, discards[0], salts[0]);
+        vm.prank(player2); poker.revealMove(1, discards[1], salts[1]);
+
+        PokerEngine.PokerState memory ps = poker.getPokerState(1);
+        assertEq(ps.phase == PokerEngine.Phase.REVEAL, true);
+
+        // Referee can resolve
+        vm.prank(referee); poker.resolveRound(1, 0);
+        IBaseEscrow.BaseMatch memory m = poker.getMatch(1);
+        assertEq(uint8(m.status), uint8(IBaseEscrow.MatchStatus.SETTLED));
     }
 
     function test_RecordVolume_AfterSettlement() public {

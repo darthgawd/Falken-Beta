@@ -30,7 +30,9 @@ interface Round {
   player_address: string;
   player_index: number;
   commit_hash: string;
-  move: number;
+  move_bytes32?: string;
+  move?: number;
+  move_decoded?: number;
   salt?: string;
   revealed: boolean;
   winner: number;
@@ -40,48 +42,13 @@ interface Round {
   reasoning?: string;
 }
 
-const MOVE_LABELS: Record<number, string> = {
-  0: '🪨 ROCK',
-  1: '📄 PAPER',
-  2: '✂️ SCISSORS',
-  // Dice results
-  101: '🎲 1',
-  102: '🎲 2',
-  103: '🎲 3',
-  104: '🎲 4',
-  105: '🎲 5',
-  106: '🎲 6'
-};
-
-const CardDisplay = ({ cardId, isDiscarded = false }: { cardId: number, isDiscarded?: boolean }) => {
-  const suits = ['♣', '♦', '♥', '♠']; // 0=Clubs, 1=Diamonds, 2=Hearts, 3=Spades
-  const suitColors = { '♣': 'text-zinc-400', '♦': 'text-blue-500', '♥': 'text-red-500', '♠': 'text-zinc-100' };
-  const ranks = ['2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K', 'A'];
-  
-  const suit = suits[Math.floor(cardId / 13)];
-  const rank = ranks[cardId % 13];
-  const color = suitColors[suit as keyof typeof suitColors];
-
-  return (
-    <div className={`w-16 h-24 rounded-xl border bg-zinc-950 flex flex-col items-center justify-center relative ${isDiscarded ? 'opacity-30 border-dashed border-zinc-800' : 'border-zinc-700 shadow-xl shadow-black/80'}`}>
-      <span className={`text-xl font-black leading-none mb-1 ${isDiscarded ? 'text-zinc-800' : 'text-white'}`}>{rank}</span>
-      <span className={`text-2xl ${isDiscarded ? 'text-zinc-800' : color}`}>{suit}</span>
-      {isDiscarded && <div className="absolute inset-0 flex items-center justify-center"><div className="w-full h-[2px] bg-red-500/40 rotate-45" /></div>}
-    </div>
-  );
-};
-
 const HAND_LABELS = [
   "High Card", "Pair", "Two Pair", "Three of a Kind", 
   "Straight", "Flush", "Full House", "Four of a Kind", "Straight Flush"
 ];
 
-const RPS_LOGIC = (process.env.NEXT_PUBLIC_RPS_LOGIC_ADDRESS || '').toLowerCase();
-const DICE_LOGIC = (process.env.NEXT_PUBLIC_DICE_LOGIC_ADDRESS || '').toLowerCase();
-const ESCROW_ADDRESS = (process.env.NEXT_PUBLIC_ESCROW_ADDRESS || '').toLowerCase();
-
 const POKER_LOGIC_IDS = [
-  '0x941e596b0c66e32eb8186fe5c43b990e128b0469bb9fe233512c2ad8a7b254c5' // Official PokerShowDownFinal (Sync)
+  '0x6de9e3cf14c5a06e9e46ade75679a7e6e49f4f9f96bd873e5166cf276ccf0233'
 ].map(id => id.toLowerCase());
 
 export default function MatchDetail({ params }: { params: Promise<{ id: string }> }) {
@@ -89,6 +56,7 @@ export default function MatchDetail({ params }: { params: Promise<{ id: string }
   const matchId = resolvedParams.id;
   const [match, setMatch] = useState<Match | null>(null);
   const [rounds, setRounds] = useState<Round[]>([]);
+  const [salts, setSalts] = useState<Record<number, { agent_address: string; salt_value: string; move_value: string }[]>>({});
   const [nicknames, setNicknames] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [copiedHash, setCopiedHash] = useState<string | null>(null);
@@ -96,7 +64,6 @@ export default function MatchDetail({ params }: { params: Promise<{ id: string }
 
   useEffect(() => {
     async function fetchData() {
-      // Stale-response guard: each call gets a sequence number.
       const seq = ++fetchSeq.current;
 
       const { data: matchData } = await supabase
@@ -111,13 +78,26 @@ export default function MatchDetail({ params }: { params: Promise<{ id: string }
         .eq('match_id', matchId)
         .order('round_number', { ascending: true });
 
+      // Fetch salts for each round
+      const uniqueRounds = [...new Set((roundsData || []).map(r => r.round_number))];
+      const saltsMap: Record<number, any[]> = {};
+      for (const roundNum of uniqueRounds) {
+        try {
+          const res = await fetch(`/api/salts?matchId=${matchId}&round=${roundNum}`);
+          if (res.ok) {
+            saltsMap[roundNum] = await res.json();
+          }
+        } catch (e) {
+          console.error('Failed to fetch salts:', e);
+        }
+      }
+      setSalts(saltsMap);
+
       if (seq !== fetchSeq.current) return;
 
       if (matchData) {
         setMatch(matchData);
-
         const addresses = (matchData.players || []).map((p: string) => p.toLowerCase());
-
         const { data: profiles } = await supabase
           .from('agent_profiles')
           .select('address, nickname')
@@ -165,30 +145,10 @@ export default function MatchDetail({ params }: { params: Promise<{ id: string }
 
   const sortedRounds = Object.values(groupedRounds).sort((a, b) => b.round - a.round);
 
-  const getFiseMoveLabel = (move: number, logicId: string) => {
-    const pokerLogicIdOfficial = '0x941e596b0c66e32eb8186fe5c43b990e128b0469bb9fe233512c2ad8a7b254c5';
-    const rpsLogicId = '0xf2f80f1811f9e2c534946f0e8ddbdbd5c1e23b6e48772afe3bccdb9f2e1cfdf3';
-
-    const cleanLogicId = (logicId || '').toLowerCase();
-
-    if (cleanLogicId === pokerLogicIdOfficial) {
-      const moveVal = Number(move);
-      if (moveVal === 99 || moveVal === 0) return '🃏 STAY';
-      
-      // Count bits set in bitmask (0-4)
-      let count = 0;
-      for (let i = 0; i < 5; i++) {
-        if (moveVal & (1 << i)) count++;
-      }
-      return `🃏 ${count} ${count === 1 ? 'CARD' : 'CARDS'} DISCARDED`;
-    }
-
-    return MOVE_LABELS[move] || `MOVE: ${move}`;
-  };
-
-  // Calculate real-time scores from rounds
   const scoreA = Object.values(groupedRounds).filter(r => r.winner === 1).length;
   const scoreB = Object.values(groupedRounds).filter(r => r.winner === 2).length;
+
+  const isPoker = POKER_LOGIC_IDS.includes(match.game_logic?.toLowerCase());
 
   return (
     <main className="min-h-screen bg-black text-zinc-400 font-sans pb-20">
@@ -204,13 +164,8 @@ export default function MatchDetail({ params }: { params: Promise<{ id: string }
         <div className="bg-zinc-900 border border-zinc-800 rounded-3xl p-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-8">
           <div className="space-y-4">
             <div className="flex items-center gap-4">
-              <div className={`px-3 py-1 rounded-lg font-bold text-[10px] border ${
-                match.game_logic?.toLowerCase() === RPS_LOGIC ? 'bg-orange-500/10 text-orange-500 border-orange-500/20' :
-                match.game_logic?.toLowerCase() === DICE_LOGIC ? 'bg-purple-500/10 text-purple-500 border-purple-500/20' :
-                'bg-cyan-500/10 text-cyan-500 border-cyan-500/20'
-              }`}>
-                {match.game_logic?.toLowerCase() === RPS_LOGIC ? 'RPS' :
-                 match.game_logic?.toLowerCase() === DICE_LOGIC ? 'DICE' : 'FISE'}
+              <div className="px-3 py-1 rounded-lg font-bold text-[10px] border bg-blue-500/10 text-blue-500 border-blue-500/20">
+                {isPoker ? 'POKER' : 'FISE'}
               </div>
               <div className="flex items-center gap-2">
                 <Swords className="w-5 h-5 text-red-500" />
@@ -278,13 +233,11 @@ export default function MatchDetail({ params }: { params: Promise<{ id: string }
           </div>
         </div>
 
-        {/* Pre-Game Table - Shows before any rounds start */}
-        {POKER_LOGIC_IDS.includes(match.game_logic?.toLowerCase()) && (match.status === 'OPEN' || match.status === 'ACTIVE' || match.status === 'SETTLED') && (
+        {/* Poker Table Display */}
+        {isPoker && (match.status === 'OPEN' || match.status === 'ACTIVE' || match.status === 'SETTLED') && (
           <div className="bg-zinc-900/50 border border-zinc-800 rounded-2xl overflow-hidden mb-4">
             <div className="bg-zinc-900 px-6 py-3 border-b border-zinc-800 flex justify-between items-center">
-              <div className="flex flex-col">
-                <span className="text-xs font-black text-white uppercase tracking-widest">TABLE READY</span>
-              </div>
+              <span className="text-xs font-black text-white uppercase tracking-widest">TABLE READY</span>
               <span className="text-xs font-black uppercase tracking-widest text-yellow-500">
                 {match.status === 'OPEN' ? 'WAITING FOR OPPONENT' : 'READY TO PLAY'}
               </span>
@@ -294,7 +247,7 @@ export default function MatchDetail({ params }: { params: Promise<{ id: string }
                 matchId={match.match_id}
                 playerA={match.players[0] || 'WAITING'}
                 playerB={match.players[1] || 'WAITING'}
-                round={1}
+                round={match.current_round}
                 logicId={match.game_logic}
                 playerANickname={match.players[0] ? nicknames[match.players[0].toLowerCase()] : 'WAITING...'}
                 playerBNickname={match.players[1] ? nicknames[match.players[1].toLowerCase()] : 'WAITING...'}
@@ -313,107 +266,56 @@ export default function MatchDetail({ params }: { params: Promise<{ id: string }
             {sortedRounds.map((round) => (
               <div key={round.round} className="bg-zinc-900/50 border border-zinc-800 rounded-2xl overflow-hidden">
                 <div className="bg-zinc-900 px-6 py-3 border-b border-zinc-800 flex justify-between items-center">
-                  <div className="flex flex-col">
-                    <span className="text-xs font-black text-white uppercase tracking-widest">ROUND {round.round}</span>
-                  </div>
+                  <span className="text-xs font-black text-white uppercase tracking-widest">ROUND {round.round}</span>
                   <span className={`text-xs font-black uppercase tracking-widest ${round.winner === 0 ? 'text-zinc-500' : 'text-emerald-500'}`}>
                     {round.winner === 0 ? 'DRAW' : round.winner === 1 ? 'PLAYER A WON' : round.winner === 2 ? 'PLAYER B WON' : 'IN PROGRESS'}
                   </span>
                 </div>
-                <div className={`grid grid-cols-1 ${POKER_LOGIC_IDS.includes(match.game_logic?.toLowerCase()) ? '' : 'md:grid-cols-2 divide-y md:divide-y-0 md:divide-x'} divide-zinc-800 min-h-[320px]`}>
-                  {POKER_LOGIC_IDS.includes(match.game_logic?.toLowerCase()) ? (
-                    <div className="flex flex-col">
-                      <div className="p-4 sm:p-10">
-                        <PokerTable 
-                          matchId={match.match_id}
-                          playerA={match.players[0] || 'WAITING'}
-                          playerB={match.players[1] || 'WAITING'}
-                          round={round.round}
-                          logicId={match.game_logic}
-                          playerAMove={round.a?.move}
-                          playerBMove={round.b?.move}
-                          playerASalt={round.a?.salt}
-                          playerBSalt={round.b?.salt}
-                          playerANickname={match.players[0] ? nicknames[match.players[0].toLowerCase()] : 'Player A'}
-                          playerBNickname={match.players[1] ? nicknames[match.players[1].toLowerCase()] : undefined}
-                          isShowdown={round.a?.revealed && round.b?.revealed}
-                          winner={round.winner}
-                        />
-                      </div>
-                      
-                      {/* Inner Monologue Section */}
-                      {(round.a?.reasoning || round.b?.reasoning) && (
-                        <div className="px-10 pb-10 grid grid-cols-1 md:grid-cols-2 gap-8 border-t border-zinc-800/50 pt-8">
-                          {round.a?.reasoning && (
-                            <div className="space-y-3 text-left">
-                              <div className="flex items-center gap-2">
-                                <Shield className="w-3 h-3 text-blue-500" />
-                                <span className="text-[10px] font-black text-blue-500 uppercase tracking-widest">
-                                  Player A Strategy
-                                </span>
-                              </div>
-                              <div className="text-xs text-zinc-400 leading-relaxed italic bg-blue-500/5 border border-blue-500/10 p-4 rounded-xl">
-                                "{round.a.reasoning}"
-                              </div>
-                              {round.a.state_description && (
-                                <div className="text-[10px] font-bold text-blue-400/60 uppercase tracking-tighter px-2">
-                                  Taunt: {round.a.state_description}
-                                </div>
-                              )}
-                            </div>
-                          )}
-                          {round.b?.reasoning && (
-                            <div className="space-y-3 text-right">
-                              <div className="flex items-center gap-2 justify-end">
-                                <span className="text-[10px] font-black text-purple-500 uppercase tracking-widest">
-                                  Player B Strategy
-                                </span>
-                                <Shield className="w-3 h-3 text-purple-500" />
-                              </div>
-                              <div className="text-xs text-zinc-400 leading-relaxed italic bg-purple-500/5 border border-purple-500/10 p-4 rounded-xl text-right">
-                                "{round.b.reasoning}"
-                              </div>
-                              {round.b.state_description && (
-                                <div className="text-[10px] font-bold text-purple-400/60 uppercase tracking-tighter px-2">
-                                  Taunt: {round.b.state_description}
-                                </div>
-                              )}
-                            </div>
-                          )}
+                <div className="flex flex-col">
+                  <div className="p-4 sm:p-10">
+                    <PokerTable 
+                      matchId={match.match_id}
+                      playerA={match.players[0] || 'WAITING'}
+                      playerB={match.players[1] || 'WAITING'}
+                      round={round.round}
+                      logicId={match.game_logic}
+                      playerAMove={round.a?.move_decoded ?? round.a?.move_bytes32}
+                      playerBMove={round.b?.move_decoded ?? round.b?.move_bytes32}
+                      playerASalt={salts[round.round]?.find(s => s.agent_address.toLowerCase() === match.players[0]?.toLowerCase())?.salt_value}
+                      playerBSalt={salts[round.round]?.find(s => s.agent_address.toLowerCase() === match.players[1]?.toLowerCase())?.salt_value}
+                      playerANickname={match.players[0] ? nicknames[match.players[0].toLowerCase()] : 'Player A'}
+                      playerBNickname={match.players[1] ? nicknames[match.players[1].toLowerCase()] : undefined}
+                      isShowdown={round.a?.revealed && round.b?.revealed}
+                      winner={round.winner}
+                    />
+                  </div>
+                  
+                  {/* Strategy Monologue */}
+                  {(round.a?.reasoning || round.b?.reasoning) && (
+                    <div className="px-10 pb-10 grid grid-cols-1 md:grid-cols-2 gap-8 border-t border-zinc-800/50 pt-8">
+                      {round.a?.reasoning && (
+                        <div className="space-y-3 text-left">
+                          <div className="flex items-center gap-2">
+                            <Shield className="w-3 h-3 text-blue-500" />
+                            <span className="text-[10px] font-black text-blue-500 uppercase tracking-widest">Player A Strategy</span>
+                          </div>
+                          <div className="text-xs text-zinc-400 leading-relaxed italic bg-blue-500/5 border border-blue-500/10 p-4 rounded-xl">
+                            "{round.a.reasoning}"
+                          </div>
+                        </div>
+                      )}
+                      {round.b?.reasoning && (
+                        <div className="space-y-3 text-right">
+                          <div className="flex items-center gap-2 justify-end">
+                            <span className="text-[10px] font-black text-purple-500 uppercase tracking-widest">Player B Strategy</span>
+                            <Shield className="w-3 h-3 text-purple-500" />
+                          </div>
+                          <div className="text-xs text-zinc-400 leading-relaxed italic bg-purple-500/5 border border-purple-500/10 p-4 rounded-xl text-right">
+                            "{round.b.reasoning}"
+                          </div>
                         </div>
                       )}
                     </div>
-                  ) : (
-                    <>
-                      <div className="p-10 flex flex-col justify-center gap-4">
-                        <span className="text-xs font-bold text-zinc-600 uppercase tracking-widest">Player A</span>
-                        {round.a?.revealed && round.a?.move != null ? (
-                          <div className="flex flex-col gap-4">
-                            <span className="text-3xl font-black text-blue-400 italic tracking-tight">{getFiseMoveLabel(round.a.move, match.game_logic)}</span>
-                          </div>
-                        ) : round.a?.revealed ? (
-                          <span className="text-sm font-bold text-yellow-500 px-2 py-1 bg-yellow-500/10 border border-yellow-500/20 rounded animate-pulse w-fit">REVEALED</span>
-                        ) : round.a?.commit_hash ? (
-                          <span className="text-sm font-bold text-zinc-500 px-2 py-1 bg-zinc-800 rounded w-fit">COMMITTED</span>
-                        ) : (
-                          <span className="text-sm font-bold text-zinc-700 italic uppercase tracking-widest">{round.winner !== null ? 'NO ACTION' : 'WAITING...'}</span>
-                        )}
-                      </div>
-                      <div className="p-10 flex flex-col justify-center gap-4">
-                        <span className="text-xs font-bold text-zinc-600 uppercase tracking-widest">Player B</span>
-                        {round.b?.revealed && round.b?.move != null ? (
-                          <div className="flex flex-col gap-4">
-                            <span className="text-3xl font-black text-purple-400 italic tracking-tight">{getFiseMoveLabel(round.b.move, match.game_logic)}</span>
-                          </div>
-                        ) : round.b?.revealed ? (
-                          <span className="text-sm font-bold text-yellow-500 px-2 py-1 bg-yellow-500/10 border border-yellow-500/20 rounded animate-pulse w-fit">REVEALED</span>
-                        ) : round.b?.commit_hash ? (
-                          <span className="text-sm font-bold text-zinc-500 px-2 py-1 bg-zinc-800 rounded w-fit">COMMITTED</span>
-                        ) : (
-                          <span className="text-sm font-bold text-zinc-700 italic uppercase tracking-widest">{round.winner !== null ? 'NO ACTION' : 'WAITING...'}</span>
-                        )}
-                      </div>
-                    </>
                   )}
                 </div>
               </div>

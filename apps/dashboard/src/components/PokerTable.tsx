@@ -113,31 +113,18 @@ export const PokerTable = ({
   };
 
   const cleanLogicId = logicId.toLowerCase();
-  const pokerLogicIdV6 = '0x5f164061c4cbb981098161539f7f691650e0c245be54ade84ea5b57496955846';
+  const pokerLogicIdV4 = '0x6de9e3cf14c5a06e9e46ade75679a7e6e49f4f9f96bd873e5166cf276ccf0233';
   
-  const numericalId = matchId.split('-').pop() || matchId;
-  let seed = numericalId + "_" + round;
-  const isV6 = cleanLogicId === pokerLogicIdV6;
+  // Game logic uses FULL matchId + "_" + round as seed (lowercase)
+  // Must match bot's computeHand: (matchId + "_" + round).toLowerCase()
+  const seed = (matchId + "_" + round).toLowerCase();
   
-  // BLIND DECK (V6): We MUST have both salts to see the real cards.
-  // If one is missing, we show face-down or "waiting" state.
-  const hasBothSalts = playerASalt && playerBSalt;
-  
-  if (isV6) {
-    if (hasBothSalts) {
-      seed = numericalId + "_" + round + "_" + playerASalt + "_" + playerBSalt;
-    } else {
-      // If we don't have both, the deck we generate is "fake".
-      // We should arguably show face-down or use a stable "pre-reveal" seed.
-      seed = numericalId + "_" + round + "_pending";
-    }
-  }
+  const isPoker = cleanLogicId === pokerLogicIdV4;
 
   const deck = generateDeck(seed);
-  
-  // Showdown is only valid if both revealed AND (if V6) we have both salts
-  const validShowdown = isShowdown && (isV6 ? hasBothSalts : true);
 
+  // Showdown is only valid if both revealed
+  const validShowdown = isShowdown;
   // Determine if we should reveal A's cards
   // We only show A's cards if they are revealed in the DB (move is not null)
   const showA = playerAMove !== undefined && playerAMove !== null;

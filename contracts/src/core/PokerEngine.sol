@@ -320,6 +320,7 @@ contract PokerEngine is BaseEscrow {
 
         require(m.status == MatchStatus.ACTIVE, "Not active");
         require(ps.phase == Phase.BET, "Not bet phase");
+        require(block.timestamp <= ps.betDeadline, "Bet timed out");
 
         uint8 playerIdx = _requireCurrentTurn(matchId);
 
@@ -329,9 +330,19 @@ contract PokerEngine is BaseEscrow {
 
         emit PlayerFolded(matchId, msg.sender, playerIdx);
 
-        // Last player standing wins immediately
+        // Last player standing wins the round (not necessarily the match)
         if (ps.activePlayers == 1) {
-            _settleMatchSingleWinner(matchId, _findLastActivePlayer(matchId));
+            uint8 winnerIdx = _findLastActivePlayer(matchId);
+            m.wins[winnerIdx]++;
+            emit RoundResolved(matchId, m.currentRound, winnerIdx);
+
+            if (m.wins[winnerIdx] >= m.winsRequired) {
+                _settleMatchSingleWinner(matchId, winnerIdx);
+            } else if (m.currentRound >= m.maxRounds) {
+                _settleByMostWins(matchId);
+            } else {
+                _startNextRound(matchId);
+            }
             return;
         }
 
@@ -421,6 +432,7 @@ contract PokerEngine is BaseEscrow {
             roundRevealCount[matchId][m.currentRound] == ps.activePlayers,
             "Not all revealed"
         );
+        require(ps.street == ps.maxStreets - 1, "Not on final street");
 
         // Update wins
         if (roundWinnerIdx == 255) {

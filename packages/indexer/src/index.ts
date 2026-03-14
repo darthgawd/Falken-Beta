@@ -1,234 +1,54 @@
-import { createPublicClient, http, parseEventLogs, decodeFunctionData } from 'viem';
+import { createPublicClient, http, parseEventLogs } from 'viem';
 import { baseSepolia } from 'viem/chains';
 import { createClient } from '@supabase/supabase-js';
 import dotenv from 'dotenv';
 import pino from 'pino';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import fs from 'fs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 dotenv.config({ path: path.resolve(__dirname, '../../../.env') });
 
 const logger = pino({
-  transport: {
-    target: 'pino-pretty',
-    options: { colorize: true }
-  }
-}, process.stderr);
+  name: 'falken-indexer-v4',
+  transport: { target: 'pino-pretty' }
+});
 
-const supabase: any = createClient(process.env.SUPABASE_URL || '', process.env.SUPABASE_SERVICE_ROLE_KEY || '');
-const publicClient: any = createPublicClient({ chain: baseSepolia, transport: http(process.env.RPC_URL) });
+const supabase = createClient(
+  process.env.SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+);
 
-// V4: Support multiple contract addresses
-const POKER_ENGINE_ADDRESS = (process.env.POKER_ENGINE_ADDRESS || '').toLowerCase();
-const FISE_ESCROW_ADDRESS = (process.env.ESCROW_ADDRESS || '').toLowerCase(); // Legacy V3
+const ESCROW_ADDRESS = process.env.POKER_ENGINE_ADDRESS || process.env.ESCROW_ADDRESS;
+const RPC_URL = process.env.RPC_URL;
 
-// V4: Use PokerEngine address if available, fallback to legacy
-const ESCROW_ADDRESS = POKER_ENGINE_ADDRESS || FISE_ESCROW_ADDRESS;
+const publicClient = createPublicClient({
+  chain: baseSepolia,
+  transport: http(RPC_URL)
+});
 
-if (!ESCROW_ADDRESS) {
-  logger.error('CRITICAL: Neither POKER_ENGINE_ADDRESS nor ESCROW_ADDRESS set');
-  process.exit(1);
-}
-
-logger.info({ escrowAddress: ESCROW_ADDRESS, isV4: !!POKER_ENGINE_ADDRESS }, 'Indexer starting...');
-
-// V4 ABI - PokerEngine
 const POKER_ENGINE_ABI = [
-  // --- EVENTS (BaseEscrow) ---
-  {
-    name: 'MatchCreated',
-    type: 'event',
-    inputs: [
-      { name: 'matchId', type: 'uint256', indexed: true },
-      { name: 'creator', type: 'address', indexed: true },
-      { name: 'stake', type: 'uint256', indexed: false },
-      { name: 'logicId', type: 'bytes32', indexed: true },
-      { name: 'maxPlayers', type: 'uint8', indexed: false },
-      { name: 'maxRounds', type: 'uint8', indexed: false }
-    ]
-  },
-  {
-    name: 'PlayerJoined',
-    type: 'event',
-    inputs: [
-      { name: 'matchId', type: 'uint256', indexed: true },
-      { name: 'player', type: 'address', indexed: true },
-      { name: 'playerIndex', type: 'uint8', indexed: false }
-    ]
-  },
-  {
-    name: 'MatchActivated',
-    type: 'event',
-    inputs: [{ name: 'matchId', type: 'uint256', indexed: true }]
-  },
-  {
-    name: 'MatchSettled',
-    type: 'event',
-    inputs: [
-      { name: 'matchId', type: 'uint256', indexed: true },
-      { name: 'winnerIndices', type: 'uint8[]', indexed: false },
-      { name: 'payout', type: 'uint256', indexed: false },
-      { name: 'rake', type: 'uint256', indexed: false }
-    ]
-  },
-  {
-    name: 'MatchVoided',
-    type: 'event',
-    inputs: [
-      { name: 'matchId', type: 'uint256', indexed: true },
-      { name: 'reason', type: 'string', indexed: false }
-    ]
-  },
-  {
-    name: 'PlayerLeft',
-    type: 'event',
-    inputs: [
-      { name: 'matchId', type: 'uint256', indexed: true },
-      { name: 'player', type: 'address', indexed: true }
-    ]
-  },
-  // --- EVENTS (PokerEngine) ---
-  {
-    name: 'MoveCommitted',
-    type: 'event',
-    inputs: [
-      { name: 'matchId', type: 'uint256', indexed: true },
-      { name: 'round', type: 'uint8', indexed: false },
-      { name: 'player', type: 'address', indexed: true }
-    ]
-  },
-  {
-    name: 'MoveRevealed',
-    type: 'event',
-    inputs: [
-      { name: 'matchId', type: 'uint256', indexed: true },
-      { name: 'round', type: 'uint8', indexed: false },
-      { name: 'player', type: 'address', indexed: true },
-      { name: 'move', type: 'bytes32', indexed: false }
-    ]
-  },
-  {
-    name: 'RoundResolved',
-    type: 'event',
-    inputs: [
-      { name: 'matchId', type: 'uint256', indexed: true },
-      { name: 'round', type: 'uint8', indexed: false },
-      { name: 'winnerIndex', type: 'uint8', indexed: false }
-    ]
-  },
-  {
-    name: 'BetPlaced',
-    type: 'event',
-    inputs: [
-      { name: 'matchId', type: 'uint256', indexed: true },
-      { name: 'player', type: 'address', indexed: true },
-      { name: 'action', type: 'uint8', indexed: false },
-      { name: 'amount', type: 'uint256', indexed: false }
-    ]
-  },
-  {
-    name: 'PlayerFolded',
-    type: 'event',
-    inputs: [
-      { name: 'matchId', type: 'uint256', indexed: true },
-      { name: 'player', type: 'address', indexed: true },
-      { name: 'playerIndex', type: 'uint8', indexed: false }
-    ]
-  },
-  {
-    name: 'StreetAdvanced',
-    type: 'event',
-    inputs: [
-      { name: 'matchId', type: 'uint256', indexed: true },
-      { name: 'round', type: 'uint8', indexed: false },
-      { name: 'newStreet', type: 'uint8', indexed: false }
-    ]
-  },
-  // --- READ FUNCTIONS ---
-  {
-    name: 'getMatch',
-    type: 'function',
-    stateMutability: 'view',
-    inputs: [{ name: 'matchId', type: 'uint256' }],
-    outputs: [{
-      name: '',
-      type: 'tuple',
-      components: [
-        { name: 'players', type: 'address[]' },
-        { name: 'stake', type: 'uint256' },
-        { name: 'totalPot', type: 'uint256' },
-        { name: 'logicId', type: 'bytes32' },
-        { name: 'maxPlayers', type: 'uint8' },
-        { name: 'maxRounds', type: 'uint8' },
-        { name: 'currentRound', type: 'uint8' },
-        { name: 'wins', type: 'uint8[]' },
-        { name: 'drawCounter', type: 'uint8' },
-        { name: 'winsRequired', type: 'uint8' },
-        { name: 'status', type: 'uint8' },
-        { name: 'winner', type: 'address' },
-        { name: 'createdAt', type: 'uint256' }
-      ]
-    }]
-  },
-  {
-    name: 'getPokerState',
-    type: 'function',
-    stateMutability: 'view',
-    inputs: [{ name: 'matchId', type: 'uint256' }],
-    outputs: [{
-      name: '',
-      type: 'tuple',
-      components: [
-        { name: 'phase', type: 'uint8' },
-        { name: 'betStructure', type: 'uint8' },
-        { name: 'maxStreets', type: 'uint8' },
-        { name: 'street', type: 'uint8' },
-        { name: 'activePlayers', type: 'uint8' },
-        { name: 'raiseCount', type: 'uint8' },
-        { name: 'playersToAct', type: 'uint8' },
-        { name: 'currentBet', type: 'uint256' },
-        { name: 'maxBuyIn', type: 'uint256' },
-        { name: 'commitDeadline', type: 'uint256' },
-        { name: 'betDeadline', type: 'uint256' },
-        { name: 'revealDeadline', type: 'uint256' },
-        { name: 'folded', type: 'bool[]' },
-        { name: 'streetBets', type: 'uint256[]' }
-      ]
-    }]
-  },
-  {
-    name: 'roundCommits',
-    type: 'function',
-    stateMutability: 'view',
-    inputs: [
-      { name: 'matchId', type: 'uint256' },
-      { name: 'round', type: 'uint8' },
-      { name: 'player', type: 'address' }
-    ],
-    outputs: [{
-      name: '',
-      type: 'tuple',
-      components: [
-        { name: 'commitHash', type: 'bytes32' },
-        { name: 'move', type: 'bytes32' },
-        { name: 'salt', type: 'bytes32' },
-        { name: 'revealed', type: 'bool' }
-      ]
-    }]
-  }
-];
+  { name: 'MatchCreated', type: 'event', inputs: [{ name: 'matchId', type: 'uint256', indexed: true }, { name: 'creator', type: 'address', indexed: true }, { name: 'stake', type: 'uint256', indexed: false }, { name: 'logicId', type: 'bytes32', indexed: true }, { name: 'maxPlayers', type: 'uint8', indexed: false }, { name: 'maxRounds', type: 'uint8', indexed: false }] },
+  { name: 'PlayerJoined', type: 'event', inputs: [{ name: 'matchId', type: 'uint256', indexed: true }, { name: 'player', type: 'address', indexed: true }, { name: 'playerIndex', type: 'uint8', indexed: false }] },
+  { name: 'MatchActivated', type: 'event', inputs: [{ name: 'matchId', type: 'uint256', indexed: true }] },
+  { name: 'BetPlaced', type: 'event', inputs: [{ name: 'matchId', type: 'uint256', indexed: true }, { name: 'player', type: 'address', indexed: true }, { name: 'action', type: 'uint8', indexed: false }, { name: 'amount', type: 'uint256', indexed: false }] },
+  { name: 'PlayerFolded', type: 'event', inputs: [{ name: 'matchId', type: 'uint256', indexed: true }, { name: 'player', type: 'address', indexed: true }, { name: 'playerIndex', type: 'uint8', indexed: false }] },
+  { name: 'MoveCommitted', type: 'event', inputs: [{ name: 'matchId', type: 'uint256', indexed: true }, { name: 'round', type: 'uint8', indexed: false }, { name: 'player', type: 'address', indexed: true }] },
+  { name: 'MoveRevealed', type: 'event', inputs: [{ name: 'matchId', type: 'uint256', indexed: true }, { name: 'round', type: 'uint8', indexed: false }, { name: 'player', type: 'address', indexed: true }, { name: 'move', type: 'bytes32', indexed: false }] },
+  { name: 'StreetAdvanced', type: 'event', inputs: [{ name: 'matchId', type: 'uint256', indexed: true }, { name: 'round', type: 'uint8', indexed: false }, { name: 'newStreet', type: 'uint8', indexed: false }] },
+  { name: 'RoundResolved', type: 'event', inputs: [{ name: 'matchId', type: 'uint256', indexed: true }, { name: 'round', type: 'uint8', indexed: false }, { name: 'winnerIndex', type: 'uint8', indexed: false }] },
+  { name: 'MatchSettled', type: 'event', inputs: [{ name: 'matchId', type: 'uint256', indexed: true }, { name: 'winnerIndices', type: 'uint8[]', indexed: false }, { name: 'payout', type: 'uint256', indexed: false }, { name: 'rake', type: 'uint256', indexed: false }] },
+  { name: 'MatchVoided', type: 'event', inputs: [{ name: 'matchId', type: 'uint256', indexed: true }, { name: 'reason', type: 'string', indexed: false }] },
+  { name: 'getMatch', type: 'function', inputs: [{ name: 'matchId', type: 'uint256' }], outputs: [{ type: 'tuple', components: [{ name: 'players', type: 'address[]' }, { name: 'stake', type: 'uint256' }, { name: 'totalPot', type: 'uint256' }, { name: 'logicId', type: 'bytes32' }, { name: 'maxPlayers', type: 'uint8' }, { name: 'maxRounds', type: 'uint8' }, { name: 'currentRound', type: 'uint8' }, { name: 'wins', type: 'uint8[]' }, { name: 'drawCounter', type: 'uint8' }, { name: 'winsRequired', type: 'uint8' }, { name: 'status', type: 'uint8' }, { name: 'winner', type: 'address' }, { name: 'createdAt', type: 'uint256' }] }] },
+  { name: 'getPokerState', type: 'function', inputs: [{ name: 'matchId', type: 'uint256' }], outputs: [{ type: 'tuple', components: [{ name: 'phase', type: 'uint8' }, { name: 'betStructure', type: 'uint8' }, { name: 'maxStreets', type: 'uint8' }, { name: 'street', type: 'uint8' }, { name: 'activePlayers', type: 'uint8' }, { name: 'raiseCount', type: 'uint8' }, { name: 'playersToAct', type: 'uint8' }, { name: 'currentBet', type: 'uint256' }, { name: 'maxBuyIn', type: 'uint256' }, { name: 'commitDeadline', type: 'uint256' }, { name: 'betDeadline', type: 'uint256' }, { name: 'revealDeadline', type: 'uint256' }, { name: 'folded', type: 'bool[]' }, { name: 'streetBets', type: 'uint256[]' }] }] }
+] as const;
 
 const processedLogIds = new Set<string>();
 const BACKFILL_CHUNK = 2000n;
 
-function getDbMatchId(onChainId: any): string {
-  return `${ESCROW_ADDRESS}-${onChainId.toString()}`;
-}
-
-async function getBlockTimestamp(blockNumber: bigint): Promise<number> {
-  const block = await publicClient.getBlock({ blockNumber });
-  return Number(block.timestamp);
+function getDbMatchId(onChainId: bigint): string {
+  return `${ESCROW_ADDRESS!.toLowerCase()}-${onChainId.toString()}`;
 }
 
 async function ensureMatchExists(mId: string, onChainId: bigint) {
@@ -245,38 +65,33 @@ async function ensureMatchExists(mId: string, onChainId: bigint) {
       args: [onChainId]
     }) as any;
 
-    // V4: Get phase from getPokerState, not getMatch
-    let pokerState;
-    try {
-      pokerState = await publicClient.readContract({
-        address: ESCROW_ADDRESS as `0x${string}`,
-        abi: POKER_ENGINE_ABI,
-        functionName: 'getPokerState',
-        args: [onChainId]
-      }) as any;
-    } catch (err) {
-      // If getPokerState fails (not a PokerEngine), fallback to V3 logic
-      pokerState = { phase: matchData.phase };
-    }
+    const pokerState = await publicClient.readContract({
+      address: ESCROW_ADDRESS as `0x${string}`,
+      abi: POKER_ENGINE_ABI,
+      functionName: 'getPokerState',
+      args: [onChainId]
+    }) as any;
 
     const statusMap = ['OPEN', 'ACTIVE', 'SETTLED', 'VOIDED'];
-    const phaseMap = ['COMMIT', 'BET', 'REVEAL']; // V4: Added BET phase
+    const phaseMap = ['COMMIT', 'BET', 'REVEAL'];
 
     await supabase.from('matches').upsert({
       match_id: mId,
+      escrow_address: ESCROW_ADDRESS,
       players: matchData.players.map((p: string) => p.toLowerCase()),
-      stake_wei: matchData.stake.toString(),
-      total_pot: matchData.totalPot.toString(),
+      stake_wei: Number(matchData.stake),
+      total_pot: Number(matchData.totalPot),
       game_logic: matchData.logicId.toLowerCase(),
       wins: matchData.wins,
       current_round: matchData.currentRound,
+      current_street: pokerState.street,
+      draw_counter: matchData.drawCounter,
+      wins_required: matchData.winsRequired,
+      max_rounds: matchData.maxRounds,
       status: statusMap[matchData.status] || 'OPEN',
       phase: phaseMap[pokerState.phase] || 'COMMIT',
-      max_players: matchData.maxPlayers,
-      max_rounds: matchData.maxRounds, // V4: maxRounds instead of winsRequired
-      draw_counter: matchData.drawCounter,
-      winner: matchData.winner?.toLowerCase(),
-      created_at: new Date().toISOString()
+      winner: matchData.winner === '0x0000000000000000000000000000000000000000' ? null : matchData.winner?.toLowerCase(),
+      created_at: new Date(Number(matchData.createdAt) * 1000).toISOString()
     });
   } catch (err: any) {
     logger.error({ matchId: mId, err: err.message }, 'Failed to fetch missing match from chain');
@@ -284,7 +99,6 @@ async function ensureMatchExists(mId: string, onChainId: bigint) {
 }
 
 export async function startIndexer() {
-  // V4: Use indexer_v4 sync state key
   const { data: syncState } = await supabase.from('sync_state').select('last_processed_block').eq('id', 'indexer_v4').single();
   const startBlockEnv = process.env.START_BLOCK ? BigInt(process.env.START_BLOCK) : 0n;
   const fromBlock = BigInt(syncState?.last_processed_block || startBlockEnv);
@@ -294,7 +108,7 @@ export async function startIndexer() {
 
   const handleLogs = async (logs: any[]) => {
     const parsedLogs = parseEventLogs({ abi: POKER_ENGINE_ABI, logs }) as any[];
-    let lastBlock = 0n;
+    let lastBlock = fromBlock;
     for (const log of parsedLogs) {
       const logId = `${log.blockHash}-${log.logIndex}`;
       if (log.removed || processedLogIds.has(logId)) continue;
@@ -302,13 +116,11 @@ export async function startIndexer() {
       processedLogIds.add(logId);
       if (log.blockNumber > lastBlock) lastBlock = log.blockNumber;
     }
-    if (lastBlock > 0n) {
-      // V4: Update indexer_v4 sync state
+    if (lastBlock > fromBlock) {
       await supabase.from('sync_state').upsert({ id: 'indexer_v4', last_processed_block: Number(lastBlock) });
     }
   };
 
-  // 1. Backfill Missed Blocks
   if (currentBlock > fromBlock) {
     let cursor = fromBlock + 1n;
     while (cursor <= currentBlock) {
@@ -325,7 +137,6 @@ export async function startIndexer() {
   }
 
   logger.info('Switching to watch mode...');
-  // 2. Real-time Monitoring
   publicClient.watchEvent({ address: ESCROW_ADDRESS as `0x${string}`, onLogs: handleLogs });
 }
 
@@ -336,228 +147,111 @@ async function processLog(log: any) {
   logger.info({ eventName, txHash, mId }, 'Processing log details');
 
   if (eventName === 'MatchCreated') {
-    const { error } = await supabase.from('matches').upsert({
+    await supabase.from('matches').upsert({
       match_id: mId,
+      escrow_address: ESCROW_ADDRESS,
       players: [args.creator.toLowerCase()],
-      stake_wei: args.stake.toString(),
+      stake_wei: Number(args.stake),
       game_logic: args.logicId.toLowerCase(),
-      max_players: args.maxPlayers,
-      max_rounds: args.maxRounds, // V4: maxRounds (was winsRequired)
+      max_rounds: args.maxRounds,
       status: 'OPEN',
       phase: 'COMMIT',
       current_round: 1,
-      wins: Array(args.maxPlayers).fill(0),
-      is_fise: true
+      current_street: 0,
+      wins: Array(args.maxPlayers).fill(0)
     });
-    if (error) logger.error({ mId, error }, 'Failed to insert MatchCreated');
-    else logger.info({ mId }, 'Successfully inserted MatchCreated');
 
   } else if (eventName === 'PlayerJoined') {
-    // V4: Renamed from MatchJoined
-    // V4: Use MatchActivated for status change, simpler logic here
-    try {
-      const playerLower = args.player.toLowerCase();
-
-      // Fetch current match state
-      const { data: match, error: fetchError } = await supabase.from('matches').select('players').eq('match_id', mId).maybeSingle();
-      if (fetchError) throw fetchError;
-
-      if (match) {
-        // Prevent duplicates
-        if (match.players?.includes(playerLower)) {
-          logger.info({ mId, player: playerLower }, 'PlayerJoined: Player already in match, skipping');
-          return;
-        }
-        const updatedPlayers = [...(match.players || []), playerLower];
-
-        // V4: Don't set ACTIVE here - wait for MatchActivated event
-        const { error } = await supabase.from('matches').update({
-          players: updatedPlayers
-        }).eq('match_id', mId);
-
-        if (error) logger.error({ mId, error }, 'Failed to update PlayerJoined');
-        else logger.info({ mId, player: playerLower }, 'Successfully updated PlayerJoined');
-      } else if (mId) {
-        logger.warn({ mId }, 'PlayerJoined: Match not found in DB, attempting to fetch from chain...');
-        await ensureMatchExists(mId, BigInt(args.matchId));
-      } else {
-        logger.error('PlayerJoined: mId is null');
-      }
-    } catch (err: any) {
-      logger.error({ mId, err: err.message }, 'Error processing PlayerJoined');
+    const { data: match } = await supabase.from('matches').select('players').eq('match_id', mId).single();
+    if (match) {
+      const updatedPlayers = [...(match.players || []), args.player.toLowerCase()];
+      await supabase.from('matches').update({ players: updatedPlayers }).eq('match_id', mId);
     }
 
   } else if (eventName === 'MatchActivated') {
-    // V4: New event - set status to ACTIVE
-    await supabase.from('matches').update({
-      status: 'ACTIVE'
-    }).eq('match_id', mId);
-    logger.info({ mId }, 'Match status updated to ACTIVE');
+    await supabase.from('matches').update({ status: 'ACTIVE' }).eq('match_id', mId);
+
+  } else if (eventName === 'BetPlaced') {
+    const actions = ['CHECK', 'CALL', 'RAISE', 'FOLD', 'ALL_IN'];
+    const { data: match } = await supabase.from('matches').select('current_round, current_street, total_pot').eq('match_id', mId).single();
+    
+    await supabase.from('match_actions').insert({
+      match_id: mId,
+      round_number: match?.current_round || 1,
+      street: match?.current_street || 0,
+      player_address: args.player.toLowerCase(),
+      action_type: actions[args.action] || 'CHECK',
+      amount: Number(args.amount),
+      tx_hash: txHash
+    });
+
+    // Update match total pot
+    if (match) {
+      await supabase.from('matches').update({ 
+        total_pot: Number(match.total_pot) + Number(args.amount) 
+      }).eq('match_id', mId);
+    }
 
   } else if (eventName === 'MoveCommitted') {
-    // Get player index from match
-    const { data: match } = await supabase.from('matches').select('players').eq('match_id', mId).single();
-    const playerIndex = match?.players?.indexOf(args.player.toLowerCase()) ?? 0;
-
-    await supabase.from('rounds').upsert({
-      match_id: mId,
-      round_number: args.round,
-      player_address: args.player.toLowerCase(),
-      player_index: playerIndex,
-      revealed: false,
-      commit_tx_hash: txHash
-    }, { onConflict: 'match_id,round_number,player_address' });
-
-    // V4: Phase managed by contract, but we can track commitment progress
-    logger.info({ mId, round: args.round, player: args.player.toLowerCase() }, 'MoveCommitted recorded');
+    // Basic tracking, moves are revealed later
+    logger.info({ mId, player: args.player }, 'Move committed');
 
   } else if (eventName === 'MoveRevealed') {
-    const { data: match } = await supabase.from('matches').select('players').eq('match_id', mId).single();
-    const playerIndex = match?.players?.indexOf(args.player.toLowerCase()) ?? 0;
-
-    // V4: Fetch salt from roundCommits view (not getRoundStatus)
-    let salt = null;
-    try {
-      const roundCommit = await publicClient.readContract({
-        address: ESCROW_ADDRESS as `0x${string}`,
-        abi: POKER_ENGINE_ABI,
-        functionName: 'roundCommits',
-        args: [BigInt(args.matchId), args.round, args.player]
-      }) as any;
-      salt = roundCommit.salt;
-    } catch (err: any) {
-      logger.warn({ mId, player: args.player.toLowerCase(), err: err.message }, 'Failed to fetch salt from roundCommits');
-    }
-
-    // V4: args.move is bytes32 (hex string), not uint8
-    const { error: upsertError } = await supabase.from('rounds').upsert({
+    const { data: match } = await supabase.from('matches').select('current_street, players').eq('match_id', mId).single();
+    const playerIndex = match?.players?.findIndex((p: string) => p.toLowerCase() === args.player.toLowerCase()) ?? 0;
+    await supabase.from('rounds').upsert({
       match_id: mId,
-      round_number: args.round,
+      round_number: Number(args.round),
+      street: match?.current_street || 0,
       player_address: args.player.toLowerCase(),
-      player_index: playerIndex,
-      move: args.move, // V4: bytes32 (hex string)
-      salt: salt,
+      player_index: playerIndex >= 0 ? playerIndex : 0,
+      move_bytes32: args.move,
       revealed: true,
       reveal_tx_hash: txHash
-    }, { onConflict: 'match_id,round_number,player_address' });
+    }, { onConflict: 'match_id,round_number,street,player_address' });
 
-    if (upsertError) {
-      logger.error({ mId, error: upsertError }, 'MoveRevealed upsert FAILED');
-    } else {
-      logger.info({ mId, round: args.round, player: args.player.toLowerCase(), move: args.move, hasSalt: !!salt }, 'MoveRevealed recorded');
-
-      // Update state_description when everyone has revealed
-      const { data: allRounds } = await supabase.from('rounds').select('revealed')
-        .match({ match_id: mId, round_number: args.round });
-
-      const revealCount = allRounds?.filter((r: any) => r.revealed).length || 0;
-
-      if (revealCount >= (match?.players?.length || 2)) {
-        await supabase.from('matches').update({
-          state_description: "All players revealed. Processing resolution..."
-        }).eq('match_id', mId);
-        logger.info({ mId }, 'Match state_description updated to REVEALED');
-      }
-    }
-
-  } else if (eventName === 'RoundResolved') {
-    // WINNER MAPPING (V4):
-    // 0 (Player A) -> 1
-    // 1 (Player B) -> 2
-    // 255 (Draw)   -> 0
-    let dbWinner = 0;
-    if (args.winnerIndex === 0) dbWinner = 1;
-    else if (args.winnerIndex === 1) dbWinner = 2;
-    else dbWinner = 0; // Draw or fallback
-
-    await supabase.from('rounds').update({
-      winner: dbWinner
-    }).match({ match_id: mId, round_number: args.round });
-
-    // Refresh match scores and full state
-    const matchData = await publicClient.readContract({
-      address: ESCROW_ADDRESS as `0x${string}`,
-      abi: POKER_ENGINE_ABI,
-      functionName: 'getMatch',
-      args: [BigInt(args.matchId)]
-    }) as any;
-
-    // V4: Get phase from getPokerState
-    let pokerState;
-    try {
-      pokerState = await publicClient.readContract({
-        address: ESCROW_ADDRESS as `0x${string}`,
-        abi: POKER_ENGINE_ABI,
-        functionName: 'getPokerState',
-        args: [BigInt(args.matchId)]
-      }) as any;
-    } catch (err) {
-      pokerState = { phase: 0 };
-    }
-
-    const phaseMap = ['COMMIT', 'BET', 'REVEAL']; // V4: 3 phases
-
-    await supabase.from('matches').update({
-      wins: Array.from(matchData.wins).map(w => Number(w)),
-      current_round: Number(matchData.currentRound),
-      total_pot: matchData.totalPot.toString(),
-      draw_counter: matchData.drawCounter,
-      phase: phaseMap[pokerState.phase] || 'COMMIT'
+  } else if (eventName === 'StreetAdvanced') {
+    await supabase.from('matches').update({ 
+      current_street: Number(args.newStreet),
+      phase: 'COMMIT' 
     }).eq('match_id', mId);
 
+  } else if (eventName === 'RoundResolved') {
+    // Update match wins array and increment round
+    const { data: match } = await supabase.from('matches').select('wins, draw_counter, current_round').eq('match_id', mId).single();
+    if (match) {
+      const wins = [...match.wins];
+      let drawCounter = match.draw_counter;
+      
+      if (args.winnerIndex === 255) {
+        drawCounter++;
+      } else {
+        wins[args.winnerIndex]++;
+      }
+
+      await supabase.from('matches').update({ 
+        wins, 
+        draw_counter: drawCounter,
+        current_round: Number(args.round) + 1, // Fix: Increment round for DB sync
+        phase: 'COMMIT' 
+      }).eq('match_id', mId);
+    }
+
   } else if (eventName === 'MatchSettled') {
-    // V4: MatchSettled has winnerIndices (array), not single winner
-    // Get primary winner (first in array)
-    const matchData = await publicClient.readContract({
-      address: ESCROW_ADDRESS as `0x${string}`,
-      abi: POKER_ENGINE_ABI,
-      functionName: 'getMatch',
-      args: [BigInt(args.matchId)]
-    }) as any;
-
-    const primaryWinner = args.winnerIndices && args.winnerIndices.length > 0
-      ? matchData.players[args.winnerIndices[0]]?.toLowerCase()
-      : null;
-
-    await supabase.from('matches').update({
+    const winner = args.winnerIndices.length > 0 ? 'SETTLED' : 'VOIDED'; // Placeholder logic
+    await supabase.from('matches').update({ 
       status: 'SETTLED',
-      winner: primaryWinner,
-      phase: 'COMPLETE',
+      winner: args.winnerIndices.length === 1 ? args.winnerIndices[0] : null,
       settle_tx_hash: txHash
     }).eq('match_id', mId);
 
-    logger.info({ mId, primaryWinner, winnerIndices: args.winnerIndices }, 'MatchSettled recorded');
-
   } else if (eventName === 'MatchVoided') {
-    await supabase.from('matches').update({ status: 'VOIDED', phase: 'COMPLETE' }).eq('match_id', mId);
-
-  } else if (eventName === 'BetPlaced') {
-    // V4: New event - refresh total_pot from chain
-    const matchData = await publicClient.readContract({
-      address: ESCROW_ADDRESS as `0x${string}`,
-      abi: POKER_ENGINE_ABI,
-      functionName: 'getMatch',
-      args: [BigInt(args.matchId)]
-    }) as any;
-
-    await supabase.from('matches').update({
-      total_pot: matchData.totalPot.toString()
+    await supabase.from('matches').update({ 
+      status: 'VOIDED',
+      state_description: args.reason 
     }).eq('match_id', mId);
-
-    logger.info({ mId, action: args.action, amount: args.amount.toString() }, 'BetPlaced recorded');
-
-  } else if (eventName === 'PlayerFolded') {
-    // V4: New event - log fold
-    logger.info({ mId, player: args.player.toLowerCase(), playerIndex: args.playerIndex }, 'PlayerFolded recorded');
-
-  } else if (eventName === 'StreetAdvanced') {
-    // V4: New event - reset phase to COMMIT for next street
-    await supabase.from('matches').update({
-      phase: 'COMMIT'
-    }).eq('match_id', mId);
-
-    logger.info({ mId, round: args.round, newStreet: args.newStreet }, 'StreetAdvanced recorded');
+    logger.info({ mId, reason: args.reason }, 'Match status updated to VOIDED');
   }
 }
 
-startIndexer().catch(console.error);
+startIndexer().catch(err => logger.error(err));

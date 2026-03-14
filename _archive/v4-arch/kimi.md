@@ -1,399 +1,138 @@
-# FALKEN V4 - Kimi Project Memory
+# 🤖 FALKEN V4 — HANDOFF TO KIMI
 
-**Created:** March 2026  
-**Last Updated:** March 2026  
-**Project Branch:** `fise-dev-v4migration`  
-**Role:** Smart Contract Development & Security Audit
-
----
-
-## 🎯 Project Overview
-
-**FALKEN** is an on-chain gaming platform where AI agents (bots) play games against each other for USDC stakes, while human spectators bet on outcomes.
-
-### Core Concept
-- **Content:** AI bots playing provably fair games (poker, chess, RPS, etc.)
-- **Revenue:** 5% rake from match pots + 5% rake from spectator prediction pools
-- **Technology:** FISE (Falken Immutable Scripting Engine) - JavaScript game logic on IPFS
-
-### Two Revenue Streams
-1. **Match rake (5%)** - Taken from every bot-vs-bot match pot
-2. **Prediction pool rake (5%)** - Taken from spectator betting pools
-
-### How It Works
-1. Game developer writes JavaScript logic, uploads to IPFS
-2. IPFS CID registered in `LogicRegistry.sol` on-chain
-3. Bots create/join matches via `PokerEngine.sol` (or other engines)
-4. Players commit hashes → bet → reveal moves
-5. Off-chain Referee runs JS logic, submits winner on-chain
-6. Contract settles pot (rake to treasury, rest to winner)
+**Date:** March 13, 2026  
+**Status:** ✅ V4 Infrastructure Online - All Blockers Resolved  
+**Next Phase:** Extended Testing & Polish
 
 ---
 
-## 🏗️ V4 Architecture
+## ✅ BLOCKERS RESOLVED
 
-### Contract Hierarchy
-```
-BaseEscrow.sol (abstract)
-├── PokerEngine.sol       ← Multi-street poker with betting
-├── SimpleEngine.sol      ← RPS, simultaneous games (Phase 2)
-└── TurnBasedEscrow.sol   ← Chess, sequential games (Phase 3)
+### ~~BLOCKER 1: `BAD_DATA` Decoding Error~~ — FIXED
 
-LogicRegistry.sol         ← Game directory (IPFS CIDs)
-PredictionPool.sol        ← Spectator betting (Phase 1 - TODO)
-```
+**Root Cause:** Compiled `dist/index.js` was out of sync with TypeScript source, causing `getRoundStatus` to be called instead of `roundCommits`. Additionally, ethers.js v6 returns `uint256` as BigInt which can't be compared to regular numbers.
 
-### Key Design Principles
-1. **BaseEscrow holds ALL money** - Game engines cannot directly transfer funds
-2. **Commit-Reveal pattern** - Prevents front-running
-3. **Pull-payments** - Failed transfers queued instead of reverting
-4. **Phase-gated logic** - Strict state machine prevents invalid transitions
+**Fixes Applied:**
+1. Rebuilt bot packages (`pnpm build`) to sync compiled JS with source
+2. Fixed BigInt comparisons: `amountOwed > 0n`, `BigInt(ps.raiseCount) < 2n`
+3. Added `?? 0n` fallback for `streetBets[playerIdx]`
+
+**Status:** Both Joshua and David bots are running successfully.
 
 ---
 
-## ✅ Completed Work
+### ~~BLOCKER 2: Dashboard `401 Unauthorized`~~ — FIXED
 
-### 1. BaseEscrow.sol - The Money Layer
-**Status:** ✅ Complete, 63 tests, ~97% coverage
+**Root Cause:** Local `.env` file in `packages/llm-house-bot-david/` was overriding root `.env`, causing Supabase client to use wrong credentials.
 
-**Key Features:**
-- `_initMatch()` - Centralized match creation with validation
-- `joinMatch()` - USDC staking, match activation when full
-- `_settleMatch()` - Multi-winner settlement with rake calculation
-- `_safeTransferUSDC()` - Pull-payment fallback for failed transfers
-- `_addContribution()` - Tracks stakes + raises for accurate refunds
-- Timeout functions - `claimTimeout()`, `mutualTimeout()`
+**Fix:** Deleted local `.env` file; bot now correctly falls back to root `.env` with proper Supabase credentials.
 
-**Security:**
-- ReentrancyGuard on all fund-moving functions
-- Ownable2Step - Two-step ownership transfer
-- Pausable - Emergency circuit breaker
-- Pull-payment fallback for blacklisted addresses
-
-**Data Structures:**
-```solidity
-struct BaseMatch {
-    address[] players;
-    uint256 stake;
-    uint256 totalPot;
-    bytes32 logicId;
-    uint8 maxPlayers;
-    uint8 maxRounds;
-    uint8 currentRound;
-    uint8[] wins;           // Per-player win counts
-    uint8 drawCounter;
-    uint8 winsRequired;
-    MatchStatus status;
-    address winner;
-}
-
-struct Resolution {
-    uint8[] winnerIndices;
-    uint256[] splitBps;     // Basis points for split pots
-}
-```
-
-### 2. LogicRegistry.sol - Game Directory
-**Status:** ✅ Complete, 32 tests, 100% coverage
-
-**Key Features:**
-- `registerLogic()` - Owner-only game registration
-- `bettingEnabled` flag - Differentiates betting vs non-betting games
-- `maxStreets` - For poker variants (1=draw, 4=hold'em, 5=stud)
-- `authorizedEscrows` - Security whitelist (C2 fix)
-- Volume tracking per game
-
-**V4 Additions:**
-- Betting configuration per game
-- Street count for poker variants
-- Authorized escrow whitelist
-
-### 3. PokerEngine.sol - Multi-Street Poker
-**Status:** ✅ Complete, 93 tests, 90.21% branch coverage
-
-**Key Features:**
-- 3-phase flow: COMMIT → BET → REVEAL
-- Betting actions: raise, call, check, fold
-- Max 2 raises per street (raise + re-raise)
-- 3 bet structures: NO_LIMIT, POT_LIMIT, FIXED_LIMIT
-- Multi-street support (1-5 streets)
-- Fold mechanics with immediate settlement when 1 player remains
-
-**Phase Flow Per Street:**
-```
-COMMIT: Players submit hash(move + salt)
-   ↓ (when all committed)
- BET: Players bet (raise/call/check/fold)
-   ↓ (when betting complete)
-REVEAL: Players reveal actual moves
-   ↓ (when all revealed)
-[Referee calls advanceStreet or resolveRound]
-```
-
-**Key Constants:**
-```solidity
-MAX_RAISES = 2;              // Per street
-BET_WINDOW = 30 minutes;
-COMMIT_WINDOW = 30 minutes;
-REVEAL_WINDOW = 30 minutes;
-```
-
-**Poker Variants Supported:**
-| Variant | maxStreets | Description |
-|---------|-----------|-------------|
-| 5-Card Draw | 1 | 5 hole cards, draw phase |
-| Texas Hold'em | 4 | 2 hole + 5 community |
-| Omaha | 4 | 4 hole + 5 community |
-| 7-Card Stud | 5 | 7 cards, no community |
-| Short Deck | 4 | 36-card deck |
-
-### 4. Test Coverage Achievement
-**Final Stats:**
-- **150 total tests** across all contracts
-- **BaseEscrow:** 63 tests, 96.43% lines, 90.67% branches
-- **LogicRegistry:** 32 tests, 100% all metrics
-- **PokerEngine:** 93 tests, 97.54% lines, 90.21% branches
-
-**Uncovered Branches (3 in PokerEngine):**
-1. `call()` maxBuyIn revert - Unreachable due to raise() checks
-2. `fold()` playersToAct == 0 - Unreachable in 3+ player games
-3. `revealMove()` Not committed - Unreachable (can't reach reveal without committing)
-
-**Note:** These are defensive checks for impossible states, effectively 100% coverage of reachable code.
-
-### 5. Security Audits
-**Status:** ✅ Complete
-
-#### Wake Audit (v4.22.1)
-- 13 findings
-- 0 Critical/High
-- 1 Medium (false positive - pull-payment pattern)
-- 12 Info (mostly inherited OpenZeppelin code)
-
-#### Slither Audit
-- 59 findings
-- 0 Critical/High
-- 1 Medium (false positive - ETH rejection pattern)
-- 58 Info (timestamps, naming, inherited code)
-
-**Key Security Patterns Validated:**
-- ✅ ReentrancyGuard on all entry points
-- ✅ Pull-payment fallback for failed transfers
-- ✅ No arbitrary external calls
-- ✅ Proper access controls (onlyOwner, onlyReferee)
-- ✅ Phase validation prevents invalid transitions
+**Status:** Supabase connections working correctly.
 
 ---
 
-## 🐛 Bugs Found & Fixed
+## ✅ ADDITIONAL FIXES (Session 2)
 
-### 1. Test Infrastructure Issues
-**Issue:** Commit-reveal hash format inconsistency  
-**Fix:** Standardized on FALKEN_V4 prefix format:
-```solidity
-keccak256(abi.encodePacked(
-    "FALKEN_V4", address(this), matchId, round, player, move, salt
-))
-```
+### VM Sandbox Execution — FIXED
 
-### 2. Coverage Test Failures
-**Issue:** Multiple tests failing due to wrong move/salt values in helpers  
-**Fix:** Updated `_commitBothPlayers()` and `_revealBothPlayers()` to use consistent values (move=5/7, salt=111/222)
+**Issue:** `SANDBOX_EXECUTION_ERROR: not a function` when resolving matches.
 
-### 3. Branch Coverage Gaps
-**Issue:** Several require statement branches uncovered  
-**Fix:** Added 30+ negative path tests to trigger revert conditions
+**Root Cause:** 
+1. Bundled JS from IPFS (`var u=class{...}export{u as default}`) wasn't being transformed correctly
+2. Game class used `evaluateWinner()` but Referee expected `checkResult()`
 
-### 4. Unreachable Code Detection
-**Discovery:** 3 branches in PokerEngine are technically unreachable  
-**Analysis:** These are defensive checks for impossible states - good to have but cannot be triggered in normal operation
+**Fix:** Rewrote `transformJsCode()` in `packages/falken-vm/src/Referee.ts` to:
+- Handle minified bundled code patterns
+- Support both `checkResult` and `evaluateWinner` methods
+- Wrap code in IIFE for proper class export
+
+**Status:** Match #12 resolved successfully. VM is processing reveals correctly.
 
 ---
 
-## 💡 Key Discoveries
+### PokerEngine Fold Logic — FIXED
 
-### 1. Security Architecture Insight
-**Discovery:** Game engines cannot steal funds directly  
-**Why:** 
-- BaseEscrow holds all USDC
-- Game engines call internal settlement functions
-- No external transfer functions in game engines
-- Even compromised engine can only manipulate game state, not steal
+**Issue:** When a player folded in 2-player game, entire match settled immediately instead of just awarding the round.
 
-### 2. Reentrancy Pattern
-**Discovery:** Pull-payments flagged as reentrancy by Slither  
-**Analysis:** False positive - external calls are to trusted USDC contract, all entry points have nonReentrant modifier
+**Root Cause:** `fold()` function called `_settleMatchSingleWinner()` directly without checking `winsRequired`.
 
-### 3. Test Coverage Reality
-**Discovery:** 100% branch coverage often impossible/undesirable  
-**Why:**
-- Defensive require statements for impossible states
-- Some branches require breaking other invariants
-- 90%+ coverage of reachable code is production-ready
+**Fix:** Updated `fold()` in `PokerEngine.sol` to:
+1. Increment winner's round count (`m.wins[winnerIdx]++`)
+2. Check if `wins[winnerIdx] >= winsRequired` before settling
+3. If not complete, start next round (`_startNextRound(matchId)`)
 
-### 4. Tool Differences
-**Discovery:** Wake vs Slither have different strengths
-- **Wake:** Better semantic analysis, fewer false positives
-- **Slither:** More comprehensive pattern detection, higher false positive rate
-- **Both agree:** No critical vulnerabilities
-
-### 5. Gas Optimization Opportunities
-**Discovery:** Multiple loops in admin functions  
-**Analysis:** Acceptable because:
-- Max 6 players per match
-- Only admin/emergency functions
-- No arbitrary call targets
+**Status:** Folding now correctly awards the round and continues play until match completion criteria met.
 
 ---
 
-## 📊 Current Project State
+### Bot Nonce Management — FIXED
 
-### Contracts Status
-| Contract | Status | Tests | Coverage | Notes |
-|----------|--------|-------|----------|-------|
-| BaseEscrow.sol | ✅ Complete | 63 | 96.43% | Money layer, audited |
-| LogicRegistry.sol | ✅ Complete | 32 | 100% | Game directory, audited |
-| PokerEngine.sol | ✅ Complete | 93 | 97.54% | Poker engine, audited |
-| IBaseEscrow.sol | ✅ Complete | - | Interface | Definitions only |
-| PredictionPool.sol | ⏳ TODO | - | - | Phase 1 priority |
-| SimpleEngine.sol | ⏳ Phase 2 | - | - | RPS, simple games |
-| TurnBasedEscrow.sol | ⏳ Phase 3 | - | - | Chess, sequential |
+**Issue:** `REPLACEMENT_UNDERPRICED` errors when bots sent rapid transactions.
 
-### Documentation Created
-- ✅ `v4.md` - Master architecture document
-- ✅ `solidity-audits.md` - Security audit results (Wake + Slither)
-- ✅ `kimi.md` - This file - Project memory
-
-### Next Priority: PredictionPool.sol
-**Why:**
-- Completes Phase 1 core product
-- Enables second revenue stream (spectator betting)
-- Standalone contract (doesn't inherit BaseEscrow)
-- Reads winner from any escrow via view function
-
-**Parimutuel Betting Model:**
-- All bets go into pool
-- Winners split proportionally
-- 5% rake to treasury
-- 95% to winning bettors
+**Fix:** Added `{ nonce: await this.wallet.getNonce('pending') }` to all transaction calls in both Joshua and David bots.
 
 ---
 
-## 📝 Technical Notes
+### David Bot Identity — FIXED
 
-### Commit-Reveal Pattern
-```solidity
-// Commit phase
-bytes32 commitHash = keccak256(abi.encodePacked(
-    "FALKEN_V4", address(this), matchId, round, player, move, salt
-));
-poker.commitMove(matchId, commitHash);
+**Issue:** Both bots using same `HOUSE_BOT_PRIVATE_KEY`, causing nonce collisions and same wallet address.
 
-// Reveal phase
-poker.revealMove(matchId, move, salt);
-```
-
-### Settlement Flow
-```solidity
-// Referee calls after final street
-poker.resolveRound(matchId, winnerIndex);
-
-// Internal _settleMatch:
-// 1. Calculate 5% rake
-// 2. Transfer rake to treasury
-// 3. Distribute remaining to winners
-// 4. Use pull-payment fallback if transfer fails
-```
-
-### Timeout Handling
-```solidity
-// Phase 1: Claim timeout (winner takes all)
-// - Must have done your action (committed/revealed)
-// - Other player timed out
-// - Winner gets entire pot minus rake
-
-// Phase 2: Mutual timeout (refund with penalty)
-// - Both players agree to timeout
-// - 1% penalty to treasury
-// - 99% refunded to each player
-```
+**Fix:** Changed David to use `AGENT_PRIVATE_KEY` for unique wallet identity.
 
 ---
 
-## 🚧 Blockers & Challenges
+## 📡 V4 DEPLOYMENT ADDRESSES (Base Sepolia)
 
-### Resolved
-1. ✅ Wake installation issues - Created new venv
-2. ✅ Test coverage gaps - Added 30+ tests
-3. ✅ Branch coverage confusion - Documented unreachable branches
-
-### Current
-None - Project ready for next phase
-
----
-
-## 📅 Development Timeline
-
-### Phase 1 (Current) - Core Product
-- ✅ BaseEscrow.sol
-- ✅ LogicRegistry.sol  
-- ✅ PokerEngine.sol
-- ⏳ PredictionPool.sol (NEXT)
-
-### Phase 2 - Simple Games
-- ⏳ SimpleEngine.sol (RPS, simultaneous games)
-
-### Phase 3 - Sequential Games
-- ⏳ TurnBasedEscrow.sol (Chess, etc.)
+| Contract | Address |
+| :--- | :--- |
+| **LogicRegistry** | `0x66ce441416E2F8c61E8442c4497Ca3FD6bbD2302` |
+| **PokerEngine** | `0x63f7fd4eEB5D9D63bDc0bD40e3aC9525fdD97c4D` |
+| **PredictionPool** | `0x2C20BD2f723EFA789E5eF5433a5d138fD8BeE4A0` |
+| **USDC (Base Sepolia)** | `0x036CbD53842c5426634e7929541eC2318f3dCF7e` |
 
 ---
 
-## 🔧 Tools & Environment
+## ✅ SUCCESS STORIES (What is Working)
 
-### Testing
-- **Framework:** Foundry (forge test)
-- **Coverage:** `forge coverage --match-contract [Name]`
-- **Debugger:** `forge test -vvv`
+### 1. The QuickJS WASM Sandbox ✅
+- **Location:** `packages/falken-vm/src/Referee.ts`
+- **Tech:** Uses `quickjs-emscripten` (WebAssembly).
+- **Status:** FULLY OPERATIONAL - Successfully resolving Match #12
 
-### Security Auditing
-- **Wake:** Semantic analysis (`wake detect all`)
-- **Slither:** Static analysis (`slither . --compile-force-framework foundry`)
+### 2. The Indexer Refactor ✅
+- **Location:** `packages/indexer/src/index.ts`
+- **Status:** ACTIVE - Recording all V4 events to Supabase
 
-### Environment
-- **Solidity:** 0.8.24
-- **Framework:** Foundry
-- **Dependencies:** OpenZeppelin Contracts v5
+### 3. Joshua & David Bots ✅
+- Both bots creating, joining, and playing matches
+- Nonce management preventing transaction collisions
+- BigInt arithmetic working correctly
 
----
-
-## 📚 Key Files
-
-### Source Code
-- `/contracts/src/core/BaseEscrow.sol`
-- `/contracts/src/core/LogicRegistry.sol`
-- `/contracts/src/core/PokerEngine.sol`
-- `/contracts/src/interfaces/IBaseEscrow.sol`
-
-### Tests
-- `/contracts/test/BaseEscrow.t.sol` (63 tests)
-- `/contracts/test/LogicRegistry.t.sol` (32 tests)
-- `/contracts/test/PokerEngine.t.sol` (93 tests)
-
-### Documentation
-- `/_archive/v4-arch/v4.md` - Architecture spec
-- `/_archive/v4-arch/solidity-audits.md` - Security audits
-- `/_archive/v4-arch/kimi.md` - This file
+### 4. PokerEngine ✅
+- Multi-street betting (COMMIT → BET → REVEAL)
+- Proper fold handling (rounds continue until winsRequired met)
+- Match settlement with rake distribution
 
 ---
 
-## 🎯 Key Takeaways
+## 🗄️ V4 DATABASE SCHEMA (Supabase)
 
-1. **Security First:** BaseEscrow is the root of trust - audit it heavily, game engines are swappable
-2. **Phase Gating:** Strict state machine prevents entire classes of bugs
-3. **Pull-Payments:** Safer than direct transfers, handles edge cases
-4. **Coverage Reality:** 90%+ of reachable code is production-ready
-5. **Tool Consensus:** Multiple auditors agreeing = higher confidence
+(Schema matches `supabase/v4_schema2.sql`)
 
 ---
 
-**Next Action:** Build PredictionPool.sol for spectator betting revenue
+## 🛠️ HOW TO RUN
+
+1. **Backend (Indexer + VM):** `pnpm falken:start`
+2. **Joshua:** `cd packages/llm-house-bot && npx tsx src/index.ts`
+3. **David:** `cd packages/llm-house-bot-david && npx tsx src/index.ts`
+
+---
+
+## 🎯 NEXT STEPS
+
+- Monitor Match #12+ for multi-round play
+- Test prediction pool integration
+- Extended stress testing with multiple simultaneous matches
+
+**Status:** V4 Engine Ready for Mass Testing 🚀

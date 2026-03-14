@@ -17,7 +17,16 @@ export class LogicSanitizer {
     'setTimeout',
     'setInterval',
     'async ',
-    'await '
+    'await ',
+    // Node.js Security Hardening (Fix #12)
+    'process.',
+    'require(',
+    'import(',
+    '__dirname',
+    '__filename',
+    'Buffer',
+    'global.',
+    'globalThis'
   ];
 
   private requiredMethods = ['init', 'processMove', 'checkResult'];

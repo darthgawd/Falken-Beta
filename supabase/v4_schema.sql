@@ -244,6 +244,29 @@ CREATE TABLE sync_state (
 );
 
 -- ==========================================
+-- 11. LOGIC REGISTRY (Aliases & Submissions)
+-- ==========================================
+
+CREATE TABLE IF NOT EXISTS logic_aliases (
+    logic_id TEXT PRIMARY KEY,
+    alias_name TEXT UNIQUE,
+    betting_enabled BOOLEAN DEFAULT FALSE,
+    max_streets INTEGER DEFAULT 1,
+    is_active BOOLEAN DEFAULT TRUE,
+    is_verified BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS logic_submissions (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    game_name TEXT UNIQUE NOT NULL,
+    ipfs_cid TEXT NOT NULL,
+    developer_address TEXT NOT NULL,
+    status TEXT DEFAULT 'PENDING',
+    created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- ==========================================
 -- INDEXES
 -- ==========================================
 

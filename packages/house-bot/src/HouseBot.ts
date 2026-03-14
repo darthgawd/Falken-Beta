@@ -61,6 +61,7 @@ class HouseBot {
     
     // Support multiple logics
     this.gameLogics = [
+      "0x6de9e3cf14c5a06e9e46ade75679a7e6e49f4f9f96bd873e5166cf276ccf0233", // Auto-injected: POKER_V4_BLITZ
       "0x941e596b0c66e32eb8186fe5c43b990e128b0469bb9fe233512c2ad8a7b254c5", // Auto-injected: PokerShowDownFinal
       "0x889b3832e2a3049a777761ca2e26dd0daff8d94901a5b715355552cbb1e75d6e", // Auto-injected: FalkenPokerV3FinalSync
       "0x9f803373e9b7dc5edddcb91c5ca2d000c78360e0d53c5d17ee9d0b6037c6358b", // Auto-injected: FalkenPokerV3Final

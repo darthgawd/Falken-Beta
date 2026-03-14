@@ -188,3 +188,162 @@ Added `MatchActivated(uint256 indexed matchId)` event to interface and emitted i
 ---
 
 *Last updated: 2026-03-11*
+
+
+---
+
+## Session 2 — 2026-03-13 (Kimi Handoff Session)
+
+### Context
+User handed off from Kimi to Claude. Active issue: `SANDBOX_EXECUTION_ERROR: not a function` in Falken VM when resolving Match #12.
+
+### Bugs Fixed
+
+#### VM Bug 1: Game Class Export Transformation (CRITICAL) — FIXED
+
+**Issue:** The QuickJS WASM sandbox couldn't execute bundled JavaScript game logic from IPFS. The bundled code had pattern `var u=class{...}export{u as default};` which wasn't being transformed correctly.
+
+**Root Cause:** Multiple issues in `transformJsCode()`:
+1. Regex patterns didn't match minified bundled code (`var u=class{...}`)
+2. `module.exports` was being stripped by subsequent `/\bexport\b/g` replacement
+3. The wrapper script expected `checkResult()` but poker games use `evaluateWinner()`
+
+**Fix Applied:**
+- Completely rewrote `transformJsCode()` in `packages/falken-vm/src/Referee.ts`
+- Added pattern matching for `var Name=class{...}` bundled syntax
+- Wrapped code in IIFE: `(function() { ...; return ClassName; })()`
+- Added support for both `checkResult` (standard) and `evaluateWinner` (poker-specific) methods
+- Removed debug logging and cleaned up error messages
+
+**Files Modified:**
+- `packages/falken-vm/src/Referee.ts` — Complete rewrite of `transformJsCode()`
+
+---
+
+### NEW BUG DISCOVERED — NOT YET FIXED
+
+#### PokerEngine: Fold in 2-Player Game Immediately Settles ENTIRE MATCH (CRITICAL)
+
+**Issue:** When a player folds in a 2-player game, the `fold()` function immediately settles the **entire match** instead of just awarding the current round and checking if match completion criteria (`winsRequired`) are met.
+
+**Location:** `contracts/src/core/PokerEngine.sol`, lines 333-336
+
+**Current Code:**
+```solidity
+// Last player standing wins immediately
+if (ps.activePlayers == 1) {
+    _settleMatchSingleWinner(matchId, _findLastActivePlayer(matchId));
+    return;
+}
+```
+
+**Problem:** 
+- Match is created with `winsRequired = 3` (need 3 round wins to win match)
+- Player 1 wins Round 1 (wins[0] = 1)
+- Player 2 folds in Round 2
+- **Current:** Match settles immediately — Player 1 wins entire match with only 1 round win
+- **Expected:** Player 1 should win Round 2 (wins[0] = 2), match continues until someone gets 3 wins OR maxRounds reached
+
+**Correct Behavior:**
+```solidity
+if (ps.activePlayers == 1) {
+    uint8 winnerIdx = _findLastActivePlayer(matchId);
+    m.wins[winnerIdx]++;
+    emit RoundResolved(matchId, m.currentRound, winnerIdx);
+    
+    // Check if match is complete
+    if (m.wins[winnerIdx] >= m.winsRequired) {
+        _settleMatchSingleWinner(matchId, winnerIdx);
+    } else if (m.currentRound >= m.maxRounds) {
+        _settleByMostWins(matchId);
+    } else {
+        _startNextRound(matchId);  // Continue to next round
+    }
+    return;
+}
+```
+
+**Multi-Player (3+) Logic Status:**
+✅ Already correct — when a player folds in 3+ player game:
+1. `activePlayers` decrements but remains ≥ 2
+2. Betting continues with remaining players
+3. Round plays out to reveal phase
+4. `resolveRound()` properly awards round and checks `winsRequired`
+
+**Impact:**
+- 2-player poker matches end after first fold (1-2 rounds max)
+- Betting/pot dynamics never fully tested
+- PredictionPool bets may resolve incorrectly (match ends too early)
+
+**Files To Modify:**
+- `contracts/src/core/PokerEngine.sol` — Fix `fold()` function logic
+
+---
+
+### Other Fixes Applied This Session
+
+#### Bot Fixes (BigInt & Nonce Management)
+
+**Joshua & David Bots:**
+1. **BigInt type errors** — Fixed arithmetic/comparisons (`amountOwed > 0n`, `raiseCount < 2n`)
+2. **Nonce management** — Added `{ nonce: await this.wallet.getNonce('pending') }` to all transactions to prevent `REPLACEMENT_UNDERPRICED` errors
+3. **David's identity** — Changed from `HOUSE_BOT_PRIVATE_KEY` (same as Joshua) to `AGENT_PRIVATE_KEY` for unique wallet address
+
+**Files Modified:**
+- `packages/llm-house-bot/src/index.ts` (Joshua)
+- `packages/llm-house-bot-david/src/index.ts` (David)
+
+---
+
+*Last updated: 2026-03-13*
+
+
+---
+
+## Session 2 — 2026-03-13 (Continued)
+
+### Dashboard Card Display Fix — RESOLVED ✅
+
+**Issue:** Cards were displaying face-down or showing incorrect hands for settled matches.
+
+**Root Cause:** Multiple issues:
+1. `player_index` was NULL in rounds table (indexer not setting it)
+2. `move_bytes32` field name mismatch (interface expected `move`)
+3. Deck seed derivation didn't match bot's algorithm
+
+**Fixes Applied:**
+
+1. **Indexer** (`packages/indexer/src/index.ts`):
+   - Added `player_index` lookup when inserting rounds on `MoveRevealed`
+   - Fixed to query match players and find correct index
+
+2. **Dashboard Interface** (`apps/dashboard/src/app/match/[id]/page.tsx`):
+   - Updated `Round` interface to include `move_bytes32`, `move`, `move_decoded`
+   - Changed `playerAMove`/`playerBMove` to use `move_decoded ?? move_bytes32`
+   - Added salts fetching from `/api/salts` endpoint
+   - Fixed salt lookup to match by player address
+
+3. **Dashboard API** (`apps/dashboard/src/app/api/salts/route.ts`):
+   - Created new API route to fetch salts from `salt_vault` using service role key
+   - Bypasses RLS policy "Deny public" on salt_vault table
+
+4. **PokerTable Component** (`apps/dashboard/src/components/PokerTable.tsx`):
+   - Fixed seed derivation: `(matchId + "_" + round).toLowerCase()`
+   - Must match bot's `computeHand` function exactly
+   - Removed sorting of salts (order matters!)
+
+**Key Learning:** The deck seed must be derived identically across:
+- Bot's `computeHand()` function
+- VM's game logic execution  
+- Dashboard's card display
+
+All three must use: `(fullMatchId + "_" + round).toLowerCase()`
+
+**Files Modified:**
+- `packages/indexer/src/index.ts`
+- `apps/dashboard/src/app/match/[id]/page.tsx`
+- `apps/dashboard/src/app/api/salts/route.ts` (new)
+- `apps/dashboard/src/components/PokerTable.tsx`
+- `apps/dashboard/.env` (added SERVICE_ROLE_KEY)
+
+**Status:** ✅ Cards now display correctly for all rounds!
