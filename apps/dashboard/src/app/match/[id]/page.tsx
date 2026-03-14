@@ -195,6 +195,11 @@ export default function MatchDetail({ params }: { params: Promise<{ id: string }
               <p className={`text-xl font-bold tracking-tight ${match.status === 'SETTLED' ? 'text-green-500' : 'text-blue-500'}`}>
                 {match.status === 'SETTLED' ? 'COMPLETE' : match.phase}
               </p>
+              {match.commit_deadline && match.phase === 'COMMIT' && (
+                <p className={`text-[10px] mt-1 ${new Date(match.commit_deadline) < new Date() ? 'text-red-500 font-bold' : 'text-zinc-500'}`}>
+                  {new Date(match.commit_deadline) < new Date() ? '⏰ COMMIT DEADLINE EXPIRED' : `Commit until ${new Date(match.commit_deadline).toLocaleTimeString()}`}
+                </p>
+              )}
             </div>
           </div>
         </div>

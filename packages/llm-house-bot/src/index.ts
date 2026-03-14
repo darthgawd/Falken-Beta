@@ -1,7 +1,5 @@
 import { ethers, Contract } from 'ethers';
 import { GoogleGenerativeAI } from "@google/generative-ai";
-import Anthropic from '@anthropic-ai/sdk';
-import OpenAI from 'openai';
 import { SaltManager } from 'reference-agent';
 import { createClient } from '@supabase/supabase-js';
 import dotenv from 'dotenv';
@@ -138,17 +136,12 @@ class JoshuaFoundation {
   private busy = false;
   private pendingActions = new Set<string>();
 
-  // Multi-Brain Clients
+  // LLM Client
   private gemini: GoogleGenerativeAI;
-  private anthropic: Anthropic | null = null;
 
   constructor() {
     this.provider = new ethers.JsonRpcProvider(process.env.RPC_URL);
     this.gemini = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
-    
-    if (process.env.CLAUDE_API_KEY) {
-      this.anthropic = new Anthropic({ apiKey: process.env.CLAUDE_API_KEY });
-    }
 
     const pk = process.env.HOUSE_BOT_PRIVATE_KEY;
     const usdcAddr = process.env.USDC_ADDRESS;
@@ -280,7 +273,7 @@ class JoshuaFoundation {
 
     if (phase === 0 && commitHash === ethers.ZeroHash) { // COMMIT
       const salt = ethers.hexlify(ethers.randomBytes(32));
-      const response = await this.queryRotatingBrain(matchId, round, matchData.logicId, playerIdx, "COMMIT");
+      const response = await this.queryBrain(matchId, round, matchData.logicId, playerIdx, "COMMIT");
       
       const moveBytes32 = ethers.zeroPadValue(ethers.toBeHex(response.move), 32);
       const hash = ethers.solidityPackedKeccak256(
@@ -317,7 +310,7 @@ class JoshuaFoundation {
       if (Number(turnIndex) !== playerIdx) return;
 
       const amountOwed = ps.currentBet - (ps.streetBets[playerIdx] ?? 0n);
-      const response = await this.queryRotatingBrain(matchId, round, matchData.logicId, playerIdx, "BET", {
+      const response = await this.queryBrain(matchId, round, matchData.logicId, playerIdx, "BET", {
         pot: ethers.formatUnits(matchData.totalPot, 6),
         toCall: ethers.formatUnits(amountOwed, 6),
         raisesLeft: (2n - BigInt(ps.raiseCount)).toString()
@@ -395,11 +388,8 @@ class JoshuaFoundation {
     }, { onConflict: 'match_id,round_number,player_address' });
   }
 
-  async queryRotatingBrain(matchId: number, round: number, logicId: string, playerIdx: number, phase: string, wagerData?: any): Promise<BrainResponse> {
-    const brains = ['gemini'];
-    if (this.anthropic) brains.push('claude');
-
-    const activeBrain = brains[Math.floor(Math.random() * brains.length)];
+  async queryBrain(matchId: number, round: number, logicId: string, playerIdx: number, phase: string, wagerData?: any): Promise<BrainResponse> {
+    const model = "gemini-2.5-flash";
     let context = this.getGameContext(matchId, round, logicId, playerIdx);
     
     if (phase === "BET") {
@@ -410,27 +400,17 @@ class JoshuaFoundation {
     const prompt = `You are Joshua, a competitive AI agent. Phase: ${phase}\n${context}\nRespond ONLY with valid JSON: { "move": number, "reasoning": "strategy", "taunt": "short trash talk" }`;
 
     try {
-      let text = '';
-      if (activeBrain === 'gemini') {
-        const model = this.gemini.getGenerativeModel({ model: "gemini-2.5-flash" });
-        const result = await model.generateContent(prompt);
-        text = result.response.text();
-      } else if (activeBrain === 'claude' && this.anthropic) {
-        const msg = await this.anthropic.messages.create({
-          model: "claude-sonnet-4-6",
-          max_tokens: 1024,
-          messages: [{ role: "user", content: prompt }]
-        });
-        text = (msg.content[0] as any).text;
-      }
+      const geminiModel = this.gemini.getGenerativeModel({ model });
+      const result = await geminiModel.generateContent(prompt);
+      const text = result.response.text();
 
       const startIdx = text.indexOf('{');
       const endIdx = text.lastIndexOf('}') + 1;
       const json = JSON.parse(text.substring(startIdx, endIdx));
       
-      return { ...json, model: activeBrain === 'gemini' ? 'gemini-2.5-flash' : 'claude-sonnet-4-6' };
+      return { ...json, model };
     } catch (err) {
-      logger.error({ brain: activeBrain, err }, 'Brain failed');
+      logger.error({ model, err }, 'Brain failed');
     }
     return { move: 0, reasoning: "Safety fallback", taunt: "...", model: 'fallback' };
   }

@@ -91,7 +91,10 @@ async function ensureMatchExists(mId: string, onChainId: bigint) {
       status: statusMap[matchData.status] || 'OPEN',
       phase: phaseMap[pokerState.phase] || 'COMMIT',
       winner: matchData.winner === '0x0000000000000000000000000000000000000000' ? null : matchData.winner?.toLowerCase(),
-      created_at: new Date(Number(matchData.createdAt) * 1000).toISOString()
+      created_at: new Date(Number(matchData.createdAt) * 1000).toISOString(),
+      commit_deadline: pokerState.commitDeadline ? new Date(Number(pokerState.commitDeadline) * 1000).toISOString() : null,
+      bet_deadline: pokerState.betDeadline ? new Date(Number(pokerState.betDeadline) * 1000).toISOString() : null,
+      reveal_deadline: pokerState.revealDeadline ? new Date(Number(pokerState.revealDeadline) * 1000).toISOString() : null
     });
   } catch (err: any) {
     logger.error({ matchId: mId, err: err.message }, 'Failed to fetch missing match from chain');
@@ -164,8 +167,14 @@ async function processLog(log: any) {
   } else if (eventName === 'PlayerJoined') {
     const { data: match } = await supabase.from('matches').select('players').eq('match_id', mId).single();
     if (match) {
-      const updatedPlayers = [...(match.players || []), args.player.toLowerCase()];
-      await supabase.from('matches').update({ players: updatedPlayers }).eq('match_id', mId);
+      const playerLower = args.player.toLowerCase();
+      const existingPlayers = match.players || [];
+      
+      // Avoid duplicates - check if player already exists
+      if (!existingPlayers.includes(playerLower)) {
+        const updatedPlayers = [...existingPlayers, playerLower];
+        await supabase.from('matches').update({ players: updatedPlayers }).eq('match_id', mId);
+      }
     }
 
   } else if (eventName === 'MatchActivated') {
@@ -198,7 +207,9 @@ async function processLog(log: any) {
 
   } else if (eventName === 'MoveRevealed') {
     const { data: match } = await supabase.from('matches').select('current_street, players').eq('match_id', mId).single();
-    const playerIndex = match?.players?.findIndex((p: string) => p.toLowerCase() === args.player.toLowerCase()) ?? 0;
+    // Remove duplicates from players array before finding index
+    const uniquePlayers = [...new Set((match?.players || []) as string[])];
+    const playerIndex = uniquePlayers.findIndex((p: string) => p.toLowerCase() === args.player.toLowerCase());
     await supabase.from('rounds').upsert({
       match_id: mId,
       round_number: Number(args.round),
@@ -211,9 +222,19 @@ async function processLog(log: any) {
     }, { onConflict: 'match_id,round_number,street,player_address' });
 
   } else if (eventName === 'StreetAdvanced') {
+    // Fetch updated poker state to get new deadlines
+    const pokerState = await publicClient.readContract({
+      address: ESCROW_ADDRESS as `0x${string}`,
+      abi: POKER_ENGINE_ABI,
+      functionName: 'getPokerState',
+      args: [args.matchId]
+    }) as any;
     await supabase.from('matches').update({ 
       current_street: Number(args.newStreet),
-      phase: 'COMMIT' 
+      phase: 'COMMIT',
+      commit_deadline: pokerState.commitDeadline ? new Date(Number(pokerState.commitDeadline) * 1000).toISOString() : null,
+      bet_deadline: pokerState.betDeadline ? new Date(Number(pokerState.betDeadline) * 1000).toISOString() : null,
+      reveal_deadline: pokerState.revealDeadline ? new Date(Number(pokerState.revealDeadline) * 1000).toISOString() : null
     }).eq('match_id', mId);
 
   } else if (eventName === 'RoundResolved') {
@@ -229,11 +250,21 @@ async function processLog(log: any) {
         wins[args.winnerIndex]++;
       }
 
+      // Fetch updated poker state to get new deadlines for next round
+      const pokerState = await publicClient.readContract({
+        address: ESCROW_ADDRESS as `0x${string}`,
+        abi: POKER_ENGINE_ABI,
+        functionName: 'getPokerState',
+        args: [args.matchId]
+      }) as any;
       await supabase.from('matches').update({ 
         wins, 
         draw_counter: drawCounter,
         current_round: Number(args.round) + 1, // Fix: Increment round for DB sync
-        phase: 'COMMIT' 
+        phase: 'COMMIT',
+        commit_deadline: pokerState.commitDeadline ? new Date(Number(pokerState.commitDeadline) * 1000).toISOString() : null,
+        bet_deadline: pokerState.betDeadline ? new Date(Number(pokerState.betDeadline) * 1000).toISOString() : null,
+        reveal_deadline: pokerState.revealDeadline ? new Date(Number(pokerState.revealDeadline) * 1000).toISOString() : null
       }).eq('match_id', mId);
     }
 

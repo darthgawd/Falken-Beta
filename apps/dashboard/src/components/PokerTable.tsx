@@ -123,13 +123,15 @@ export const PokerTable = ({
 
   const deck = generateDeck(seed);
 
-  // Showdown is only valid if both revealed
-  const validShowdown = isShowdown;
-  // Determine if we should reveal A's cards
-  // We only show A's cards if they are revealed in the DB (move is not null)
-  const showA = playerAMove !== undefined && playerAMove !== null;
-  // We only show B's cards if validShowdown is true (both revealed)
-  const showB = validShowdown && playerBMove !== undefined && playerBMove !== null;
+  // Show cards if move data is available (decoded move or bytes32)
+  // This allows viewing cards as soon as a player reveals, even if opponent hasn't
+  const hasMoveA = playerAMove !== undefined && playerAMove !== null;
+  const hasMoveB = playerBMove !== undefined && playerBMove !== null;
+  
+  // For the current round display (isShowdown=false), still show cards if moves exist
+  // This helps debug and view partial reveals
+  const showA = hasMoveA;
+  const showB = hasMoveB;
 
   // Bitmask decode helper: extract set bit positions as discard indices
   const bitmaskToIndices = (move: number | string | undefined | null): number[] => {
