@@ -68,6 +68,15 @@ contract MockEscrow is BaseEscrow {
     function testSettleWithResolution(uint256 matchId, IBaseEscrow.Resolution memory res) external {
         _settleMatch(matchId, res);
     }
+
+    /// @dev Simulate a mid-game round pot distribution (e.g. PokerEngine fold win).
+    /// Transfers USDC out of the contract and updates accounting mappings.
+    function testMidGameDistribute(uint256 matchId, address player, uint256 gross, uint256 net) external {
+        _midGameDistributed[matchId] += gross;
+        _midGameReceived[matchId][player] += net;
+        _safeTransferUSDC(player, net);
+        if (gross > net) _safeTransferUSDC(treasury, gross - net);
+    }
 }
 
 contract BaseEscrowTest is Test {
@@ -1124,6 +1133,54 @@ contract BaseEscrowTest is Test {
 
         assertEq(player1Total, 166_500_000);
         assertEq(player2Total, 111 * 1e6);
+    }
+
+    // ==================== MID-GAME RAKE: ADMIN VOID PRO-RATA (#9) ====================
+
+    function test_AdminVoidMatch_ProRata_MidGameRakeReducesPool() public {
+        // 3-player match: 100 USDC each → totalPot = 300 USDC
+        vm.prank(player1);
+        escrow.createMatch(100 * 1e6, LOGIC_ID, 3, 1, 10);
+        vm.prank(player2); escrow.joinMatch(1);
+        vm.prank(player3); escrow.joinMatch(1);
+
+        // Simulate player1 raising 100 USDC.
+        // Mint directly to escrow (avoids needing full PokerEngine stack),
+        // then update accounting to reflect the raise.
+        usdc.mint(address(escrow), 100 * 1e6);
+        escrow.testAddContribution(1, player1, 100 * 1e6); // totalPot=400, contrib[p1]=200
+
+        // Simulate mid-game distribution: player1 wins round pot (100 USDC gross).
+        // rake = 7.5%, so net to player1 = 92.5 USDC.
+        uint256 gross = 100 * 1e6;
+        uint256 net   = gross - (gross * 750 / 10000); // 92_500_000
+        escrow.testMidGameDistribute(1, player1, gross, net);
+        // Contract now holds 400 - 100 = 300 USDC. effectivePot = 300.
+
+        uint256 p1Before = usdc.balanceOf(player1);
+        uint256 p2Before = usdc.balanceOf(player2);
+        uint256 p3Before = usdc.balanceOf(player3);
+
+        escrow.adminVoidMatch(1);
+
+        // owed[p1] = 200e6 - 92.5e6 = 107.5e6
+        // owed[p2] = 100e6, owed[p3] = 100e6
+        // totalOwed = 307.5e6 > effectivePot (300e6) → pro-rata
+        uint256 p1Owed    = 200 * 1e6 - net;    // 107_500_000
+        uint256 p2Owed    = 100 * 1e6;
+        uint256 p3Owed    = 100 * 1e6;
+        uint256 totalOwed = p1Owed + p2Owed + p3Owed;
+        uint256 effPot    = 300 * 1e6;
+
+        uint256 p1Refund = (p1Owed * effPot) / totalOwed;
+        uint256 p2Refund = (p2Owed * effPot) / totalOwed;
+        uint256 p3Refund = effPot - p1Refund - p2Refund; // remainder to last player
+
+        assertEq(usdc.balanceOf(player1) - p1Before, p1Refund);
+        assertEq(usdc.balanceOf(player2) - p2Before, p2Refund);
+        assertEq(usdc.balanceOf(player3) - p3Before, p3Refund);
+        assertEq(p1Refund + p2Refund + p3Refund, effPot); // no dust left
+        assertEq(usdc.balanceOf(address(escrow)), 0);      // contract fully drained
     }
 
 }

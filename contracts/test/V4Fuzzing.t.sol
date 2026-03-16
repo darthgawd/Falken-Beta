@@ -2,9 +2,9 @@
 pragma solidity 0.8.24;
 
 import "forge-std/Test.sol";
-import "../../src/core/PokerEngine.sol";
-import "../../src/core/LogicRegistry.sol";
-import "../../src/core/PredictionPool.sol";
+import "../src/core/PokerEngine.sol";
+import "../src/core/LogicRegistry.sol";
+import "../src/core/PredictionPool.sol";
 import "./mocks/BlocklistMockUSDC.sol";
 
 /**
@@ -39,35 +39,27 @@ contract V4Fuzzing is Test {
 
     // --- 1. RAKE ROUNDING FUZZ ---
     // Proves that rake is collected for any meaningful stake.
-    function testFuzz_RakeNeverZero(uint256 stake) public {
+    function testFuzz_RakeNeverZero(uint256 stake) public pure {
         // We only care about stakes above our MIN_STAKE (0.10 USDC)
         stake = bound(stake, 100_000, 1_000_000_000 * 1e6); // 0.1 to 1 Billion USDC
-        
-        uint256 rake = (stake * 500) / 10000;
+
+        uint256 rake = (stake * 750) / 10000; // RAKE_BPS = 750
         assertGt(rake, 0, "Rake rounded to zero for valid stake");
-        
-        // Mathematical limit: rake becomes 0 when stake < 20
-        if (stake < 20) {
-            assertEq((stake * 500) / 10000, 0);
-        }
     }
 
     // --- 2. SETTLEMENT CONSERVATION FUZZ ---
     // Proves: totalUSDC_In == Winnings_Out + Rake_Out
-    function testFuzz_SettlementConservation(uint256 stake, uint8 numPlayers) public {
+    function testFuzz_SettlementConservation(uint256 stake, uint8 numPlayers) public pure {
         stake = bound(stake, 100_000, 10_000e6); // 0.1 to 10k USDC
         numPlayers = uint8(bound(numPlayers, 2, 6));
-        
+
         uint256 totalPot = stake * numPlayers;
-        
-        // Simulated settlement math (Logic from BaseEscrow.sol)
-        uint256 rake = (totalPot * 500) / 10000;
+
+        // Simulated settlement math (matching BaseEscrow.sol RAKE_BPS = 750)
+        uint256 rake = (totalPot * 750) / 10000;
         uint256 remainingPot = totalPot - rake;
-        
-        // Single winner gets all remaining
-        uint256 winnerShare = (remainingPot * 10000) / 10000;
-        
-        assertEq(rake + winnerShare, totalPot, "Money leaked during settlement");
+
+        assertEq(rake + remainingPot, totalPot, "Money leaked during settlement");
     }
 
     // --- 3. COMMIT REVEAL BINDING FUZZ ---
@@ -88,19 +80,19 @@ contract V4Fuzzing is Test {
 
     // --- 4. DRAW FULL REFUND FUZZ ---
     // Proves: Everyone gets their exact stake back (minus rake) on draw
-    function testFuzz_DrawFullRefund(uint256 stake) public {
+    function testFuzz_DrawFullRefund(uint256 stake) public pure {
         stake = bound(stake, 100_000, 1_000_000e6);
         uint256 numPlayers = 2;
         uint256 totalPot = stake * numPlayers;
-        
-        uint256 rake = (totalPot * 500) / 10000;
+
+        uint256 rake = (totalPot * 750) / 10000; // RAKE_BPS = 750
         uint256 remainingPot = totalPot - rake;
-        
+
         // Distribution logic matching BaseEscrow.sol:
         // Rounding dust goes to the last player
         uint256 p1Share = remainingPot / numPlayers;
         uint256 p2Share = remainingPot - p1Share; // Last player gets remainder
-        
+
         assertEq(p1Share + p2Share, remainingPot, "Total distribution mismatch");
         assertLe(p2Share - p1Share, 1, "Dust exceeds 1 unit");
     }
@@ -120,13 +112,13 @@ contract V4Fuzzing is Test {
 
     // --- 6. PREDICTION POOL PARIMUTUEL FUZZ ---
     // Proves: Payouts are pro-rata and pool balances correctly
-    function testFuzz_PredictionPayoutMath(uint256 betA, uint256 betB, uint256 myBet) public {
+    function testFuzz_PredictionPayoutMath(uint256 betA, uint256 betB, uint256 myBet) public pure {
         betA = bound(betA, 1e6, 1000e6);
         betB = bound(betB, 1e6, 1000e6);
         myBet = bound(myBet, 1e6, betA); // I bet part of Side A
 
         uint256 totalPool = betA + betB;
-        uint256 rake = (totalPool * 500) / 10000;
+        uint256 rake = (totalPool * 750) / 10000; // RAKE_BPS = 750
         uint256 remainingPool = totalPool - rake;
 
         // Payout formula from PredictionPool.sol
@@ -144,25 +136,23 @@ contract V4Fuzzing is Test {
 
     // --- 7. MONEY INVARIANT (STATEFUL) ---
     /**
-     * @dev PROVES: Contract Balance == sum(Matches) + sum(Withdrawals) + sum(Rake)
-     * This ensures no money is leaked or locked forever.
+     * @dev PROVES: Contract Balance >= remaining obligations for OPEN/ACTIVE matches.
+     * totalPot tracks gross deposits; getMidGameDistributed tracks what's already paid out mid-game.
+     * effectivePot = totalPot - midGameDistributed = USDC still owed to players.
      */
     function invariant_USDCBalanceConservation() public view {
-        uint256 totalMatchStakes = 0;
+        uint256 totalObligations = 0;
         uint256 matchCount = poker.matchCounter();
-        
+
         for (uint256 i = 1; i <= matchCount; i++) {
             IBaseEscrow.BaseMatch memory m = poker.getMatch(i);
             if (m.status == IBaseEscrow.MatchStatus.OPEN || m.status == IBaseEscrow.MatchStatus.ACTIVE) {
-                totalMatchStakes += m.totalPot;
+                uint256 midGamePaid = poker.getMidGameDistributed(i);
+                totalObligations += m.totalPot - midGamePaid;
             }
         }
 
         uint256 contractBalance = usdc.balanceOf(address(poker));
-        
-        // Treasury rake is transferred immediately in settleMatch, 
-        // so it won't be in the contract balance unless a transfer failed.
-        // The invariant should account for funds that SHOULD be there.
-        assertGe(contractBalance, totalMatchStakes, "Contract missing active stakes");
+        assertGe(contractBalance, totalObligations, "Contract cannot cover remaining match obligations");
     }
 }

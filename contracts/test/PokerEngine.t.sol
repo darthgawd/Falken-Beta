@@ -2223,8 +2223,12 @@ contract PokerEngineTest is Test {
     }
 
     function test_ResolveRoundSplit_Success() public {
-        // 1-street match, both reveal, referee splits 50/50
-        _createAndJoinMatchDraw();
+        // 1-street match (maxRounds=1), both reveal, referee splits 50/50.
+        // resolveRoundSplit on the LAST round → _settleByMostWins → draw → equal split of stakes.
+        vm.prank(player1);
+        poker.createMatch(100 * 1e6, LOGIC_ID_DRAW, 2, 1, 1, 1000 * 1e6, PokerEngine.BetStructure.NO_LIMIT);
+        vm.prank(player2);
+        poker.joinMatch(1);
         _commitBothPlayers(1);
         _checkBothPlayers(1);
         _revealBothPlayers(1);
@@ -2238,16 +2242,24 @@ contract PokerEngineTest is Test {
         IBaseEscrow.BaseMatch memory m = poker.getMatch(1);
         assertEq(uint8(m.status), uint8(IBaseEscrow.MatchStatus.SETTLED));
 
+        // No betting → roundPot=0, _distributeRoundPotSplit is no-op.
+        // _settleByMostWins: all wins=0 + drawCounter=1 → _settleMatchDraw → 50/50 of stakes.
         // Pot = 200, rake = 15 (7.5%), remaining = 185, each gets 92.5
         assertEq(usdc.balanceOf(player1) - p1Before, 92_500_000);
         assertEq(usdc.balanceOf(player2) - p2Before, 92_500_000);
     }
 
     function test_ResolveRoundSplit_UnevenSplit() public {
-        // Referee can split 70/30 (e.g., Hi-Lo where player1 wins hi, player2 wins lo)
-        _createAndJoinMatchDraw();
+        // splitBps applies to the ROUND POT (betting), not the stakes.
+        // Create a match with actual bets so the 70/30 split is meaningful.
+        // Stakes go to _settleByMostWins at match end, not via splitBps.
+        _createAndJoinMatchDraw(); // winsRequired=1, maxRounds=10
         _commitBothPlayers(1);
-        _checkBothPlayers(1);
+
+        // player1 raises 100, player2 calls → roundPot = 200 USDC → REVEAL
+        vm.prank(player1); poker.raise(1, 100 * 1e6);
+        vm.prank(player2); poker.call(1);
+
         _revealBothPlayers(1);
 
         uint256 p1Before = usdc.balanceOf(player1);
@@ -2256,10 +2268,15 @@ contract PokerEngineTest is Test {
         vm.prank(referee);
         poker.resolveRoundSplit(1, _makeSplitRes(0, 1, 7000, 3000));
 
-        // Pot = 200, rake = 15, remaining = 185
-        // player1: 185 * 70% = 129.5, player2 (last winner): 185 - 129.5 = 55.5
+        // roundPot = 200, rake = 15 (7.5%), winnerPot = 185
+        // player1: 185 * 70% = 129.5, player2 (last): 185 - 129.5 = 55.5
         assertEq(usdc.balanceOf(player1) - p1Before, 129_500_000);
         assertEq(usdc.balanceOf(player2) - p2Before, 55_500_000);
+
+        // currentRound=1 < maxRounds=10 → match continues to round 2
+        IBaseEscrow.BaseMatch memory m = poker.getMatch(1);
+        assertEq(uint8(m.status), uint8(IBaseEscrow.MatchStatus.ACTIVE));
+        assertEq(m.currentRound, 2);
     }
 
     function test_ResolveRoundSplit_NotReferee() public {
@@ -2452,26 +2469,39 @@ contract PokerEngineTest is Test {
 
     // ==================== RESOLVE ROUND SPLIT MULTI-ROUND TESTS ====================
 
-    function test_ResolveRoundSplit_TerminatesMultiRoundMatch() public {
-        // Documents design: resolveRoundSplit always settles the match immediately,
-        // even in a multi-round game (winsRequired=3). Use resolveRound(255) instead
-        // to record a draw and continue play.
+    function test_ResolveRoundSplit_ContinuesUntilMaxRounds() public {
+        // Documents design: resolveRoundSplit distributes the round pot and CONTINUES
+        // to next round unless maxRounds is reached. Use resolveRound(255) for mid-game
+        // draws that don't involve a pot split.
         vm.prank(player1);
-        poker.createMatch(100 * 1e6, LOGIC_ID_DRAW, 2, 3, 5, 1000 * 1e6, PokerEngine.BetStructure.NO_LIMIT);
+        poker.createMatch(100 * 1e6, LOGIC_ID_DRAW, 2, 2, 2, 1000 * 1e6, PokerEngine.BetStructure.NO_LIMIT);
         vm.prank(player2);
         poker.joinMatch(1);
 
+        // Round 1 (not last): split continues to round 2
         _commitBothPlayers(1);
         _checkBothPlayers(1);
         _revealBothPlayers(1);
 
-        // Round 1 of a 3-wins-required match: split settles match immediately
         vm.prank(referee);
         poker.resolveRoundSplit(1, _makeSplitRes(0, 1, 5000, 5000));
 
         IBaseEscrow.BaseMatch memory m = poker.getMatch(1);
+        assertEq(uint8(m.status), uint8(IBaseEscrow.MatchStatus.ACTIVE));
+        assertEq(m.currentRound, 2); // game continued to round 2
+        assertEq(m.drawCounter, 1);
+
+        // Round 2 (last, maxRounds=2): split → _settleByMostWins → draw → SETTLED
+        _commitBothPlayers(1);
+        _checkBothPlayers(1);
+        _revealBothPlayers(1);
+
+        vm.prank(referee);
+        poker.resolveRoundSplit(1, _makeSplitRes(0, 1, 5000, 5000));
+
+        m = poker.getMatch(1);
         assertEq(uint8(m.status), uint8(IBaseEscrow.MatchStatus.SETTLED));
-        assertEq(m.currentRound, 1); // match ended after round 1 despite winsRequired=3
+        assertEq(m.drawCounter, 2);
     }
 
     // ==================== END-TO-END MULTI-ROUND TESTS ====================

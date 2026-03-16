@@ -3,8 +3,8 @@ pragma solidity 0.8.24;
 
 import "forge-std/Test.sol";
 import "forge-std/StdInvariant.sol";
-import "../../src/core/PokerEngine.sol";
-import "../../src/core/LogicRegistry.sol";
+import "../src/core/PokerEngine.sol";
+import "../src/core/LogicRegistry.sol";
 import "./mocks/BlocklistMockUSDC.sol";
 
 /**
@@ -413,20 +413,24 @@ contract InvariantPokerEngineTest is StdInvariant, Test {
 
     /**
      * INVARIANT 1: The Money Never Lies
-     * Contract balance must ALWAYS be >= active stakes + pending withdrawals.
+     * Contract balance must ALWAYS be >= remaining match obligations + pending withdrawals.
+     * Remaining obligation = totalPot - midGameDistributed (already paid out mid-game).
      * If this ever fails, USDC leaked or was created from nowhere.
      */
     function invariant_moneyConservation() public view {
         uint256 contractBalance = usdc.balanceOf(address(poker));
 
-        // Sum all OPEN and ACTIVE match pots
-        uint256 totalActiveStakes = 0;
+        // Sum remaining obligations for all OPEN and ACTIVE matches.
+        // totalPot is the gross amount deposited; getMidGameDistributed is what's
+        // already been paid out (round pots + rake), so effective obligation is the difference.
+        uint256 totalObligations = 0;
         uint256 matchCount = poker.matchCounter();
 
         for (uint256 i = 1; i <= matchCount; i++) {
             IBaseEscrow.BaseMatch memory m = poker.getMatch(i);
             if (m.status == IBaseEscrow.MatchStatus.OPEN || m.status == IBaseEscrow.MatchStatus.ACTIVE) {
-                totalActiveStakes += m.totalPot;
+                uint256 midGamePaid = poker.getMidGameDistributed(i);
+                totalObligations += m.totalPot - midGamePaid;
             }
         }
 
@@ -436,14 +440,13 @@ contract InvariantPokerEngineTest is StdInvariant, Test {
         for (uint256 i = 0; i < actorList.length; i++) {
             totalPending += poker.pendingWithdrawals(actorList[i]);
         }
-        // Include treasury and referee pending too
         totalPending += poker.pendingWithdrawals(treasury);
 
         // THE INVARIANT: contract holds enough for all obligations
         assertGe(
             contractBalance,
-            totalActiveStakes + totalPending,
-            "CRITICAL: Contract balance < active stakes + pending withdrawals"
+            totalObligations + totalPending,
+            "CRITICAL: Contract balance < remaining match obligations + pending withdrawals"
         );
     }
 

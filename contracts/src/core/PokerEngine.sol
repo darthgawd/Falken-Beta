@@ -81,6 +81,7 @@ contract PokerEngine is BaseEscrow {
     event MoveCommitted(uint256 indexed matchId, uint8 round, address indexed player);
     event MoveRevealed(uint256 indexed matchId, uint8 round, address indexed player, bytes32 move);
     event RoundResolved(uint256 indexed matchId, uint8 round, uint8 winnerIndex);
+    event RoundPotDistributed(uint256 indexed matchId, uint8 round, address winner, uint256 amount);
 
     // Bet action enum for events (matches DB schema)
     enum bet_action { CHECK, CALL, RAISE, FOLD, ALL_IN }
@@ -214,6 +215,7 @@ contract PokerEngine is BaseEscrow {
         require(m.status == MatchStatus.ACTIVE, "Not active");
         require(ps.phase == Phase.BET, "Not bet phase");
         require(block.timestamp <= ps.betDeadline, "Bet timed out");
+        require(_isPlayer(matchId, msg.sender), "Not a player");
         require(ps.raiseCount < MAX_RAISES, "Max raises reached");
         require(raiseAmount > 0, "Raise must be > 0");
 
@@ -223,7 +225,10 @@ contract PokerEngine is BaseEscrow {
         if (ps.betStructure == BetStructure.FIXED_LIMIT) {
             require(raiseAmount == m.stake, "Fixed limit: raise must equal stake");
         } else if (ps.betStructure == BetStructure.POT_LIMIT) {
-            require(raiseAmount <= m.totalPot, "Pot limit exceeded");
+            // Pot = effective match pot (stakes in escrow) + bets placed in this hand so far.
+            // _currentHandPot starts at 0 each hand so we add the effective match stake pot as the base.
+            uint256 potLimit = (m.totalPot - _midGameDistributed[matchId]) + _currentHandPot[matchId];
+            require(raiseAmount <= potLimit, "Pot limit exceeded");
         }
         // NO_LIMIT: any amount (capped by maxBuyIn below)
 
@@ -240,6 +245,7 @@ contract PokerEngine is BaseEscrow {
         // Pull USDC and track contribution
         usdc.safeTransferFrom(msg.sender, address(this), amountOwed);
         _addContribution(matchId, msg.sender, amountOwed);
+        _currentHandPot[matchId] += amountOwed;
 
         // Update state
         ps.streetBets[playerIdx] = newBetLevel;
@@ -262,6 +268,7 @@ contract PokerEngine is BaseEscrow {
         require(m.status == MatchStatus.ACTIVE, "Not active");
         require(ps.phase == Phase.BET, "Not bet phase");
         require(block.timestamp <= ps.betDeadline, "Bet timed out");
+        require(_isPlayer(matchId, msg.sender), "Not a player");
 
         uint8 playerIdx = _requireCurrentTurn(matchId);
 
@@ -277,6 +284,7 @@ contract PokerEngine is BaseEscrow {
         // Pull USDC and track contribution
         usdc.safeTransferFrom(msg.sender, address(this), amountOwed);
         _addContribution(matchId, msg.sender, amountOwed);
+        _currentHandPot[matchId] += amountOwed;
 
         ps.streetBets[playerIdx] = ps.currentBet;
         ps.playersToAct--;
@@ -298,6 +306,7 @@ contract PokerEngine is BaseEscrow {
         require(m.status == MatchStatus.ACTIVE, "Not active");
         require(ps.phase == Phase.BET, "Not bet phase");
         require(block.timestamp <= ps.betDeadline, "Bet timed out");
+        require(_isPlayer(matchId, msg.sender), "Not a player");
 
         uint8 playerIdx = _requireCurrentTurn(matchId);
         require(ps.streetBets[playerIdx] == ps.currentBet, "Must call or raise");
@@ -321,6 +330,7 @@ contract PokerEngine is BaseEscrow {
         require(m.status == MatchStatus.ACTIVE, "Not active");
         require(ps.phase == Phase.BET, "Not bet phase");
         require(block.timestamp <= ps.betDeadline, "Bet timed out");
+        require(_isPlayer(matchId, msg.sender), "Not a player");
 
         uint8 playerIdx = _requireCurrentTurn(matchId);
 
@@ -332,7 +342,7 @@ contract PokerEngine is BaseEscrow {
 
         // Last player standing wins the round (not necessarily the match)
         if (ps.activePlayers == 1) {
-            uint8 winnerIdx = _findLastActivePlayer(matchId);
+            uint8 winnerIdx = _findSoleActivePlayer(matchId);
             m.wins[winnerIdx]++;
             emit RoundResolved(matchId, m.currentRound, winnerIdx);
 
@@ -341,6 +351,7 @@ contract PokerEngine is BaseEscrow {
             } else if (m.currentRound >= m.maxRounds) {
                 _settleByMostWins(matchId);
             } else {
+                _distributeRoundPot(matchId, winnerIdx);
                 _startNextRound(matchId);
             }
             return;
@@ -456,6 +467,14 @@ contract PokerEngine is BaseEscrow {
             return;
         }
 
+        // Distribute round pot to winner before starting next round
+        if (roundWinnerIdx != 255) {
+            _distributeRoundPot(matchId, roundWinnerIdx);
+        } else {
+            // Draw: no mid-game distribution; emit zero-amount event for indexer visibility
+            emit RoundPotDistributed(matchId, m.currentRound, address(0), 0);
+        }
+
         // Start next round (new poker hand)
         _startNextRound(matchId);
     }
@@ -478,17 +497,39 @@ contract PokerEngine is BaseEscrow {
             roundRevealCount[matchId][m.currentRound] == ps.activePlayers,
             "Not all revealed"
         );
+        require(ps.street == ps.maxStreets - 1, "Not on final street");
         require(res.winnerIndices.length >= 2, "Use resolveRound for single winner");
+        require(res.winnerIndices.length == res.splitBps.length, "Winner/split length mismatch");
 
-        // Validate no folded winners
+        // Validate splits sum, no folded winners, no duplicate indices
+        uint256 totalSplit = 0;
+        for (uint i = 0; i < res.splitBps.length; i++) {
+            totalSplit += res.splitBps[i];
+        }
+        require(totalSplit == 10000, "Splits must sum to 10000");
+
+        // Validate no folded winners and no duplicate indices
         for (uint i = 0; i < res.winnerIndices.length; i++) {
             require(res.winnerIndices[i] < m.players.length, "Invalid winner index");
             require(!ps.folded[res.winnerIndices[i]], "Winner folded");
+            for (uint j = i + 1; j < res.winnerIndices.length; j++) {
+                require(res.winnerIndices[i] != res.winnerIndices[j], "Duplicate winner index");
+            }
         }
 
+        m.drawCounter++;
         emit RoundResolved(matchId, m.currentRound, 255); // 255 = draw/split
 
-        _settleMatch(matchId, res);
+        // Distribute this hand's bet pot proportionally among split winners
+        _distributeRoundPotSplit(matchId, res);
+
+        if (m.currentRound >= m.maxRounds) {
+            // Last round: settle full remaining match pot by most wins
+            _settleByMostWins(matchId);
+        } else {
+            // More rounds to play: continue
+            _startNextRound(matchId);
+        }
     }
 
     // --- ADMIN ---
@@ -517,14 +558,70 @@ contract PokerEngine is BaseEscrow {
                 "You did not commit"
             );
             emit TimeoutClaimed(matchId, msg.sender, claimerIdx);
-            _settleMatchSingleWinner(matchId, claimerIdx);
+
+            // In multi-player games, all committed players share equally (not just the caller)
+            uint8 commitCount = roundCommitCount[matchId][m.currentRound];
+            if (commitCount == 1) {
+                _settleMatchSingleWinner(matchId, claimerIdx);
+            } else {
+                uint8[] memory committedIndices = new uint8[](commitCount);
+                uint256[] memory splitBps = new uint256[](commitCount);
+                uint8 found = 0;
+                for (uint8 i = 0; i < uint8(m.players.length); i++) {
+                    if (roundCommits[matchId][m.currentRound][m.players[i]].commitHash != bytes32(0)) {
+                        committedIndices[found] = i;
+                        found++;
+                    }
+                }
+                uint256 equalSplit = 10000 / commitCount;
+                uint256 remainder = 10000 - (equalSplit * commitCount);
+                for (uint8 i = 0; i < commitCount; i++) {
+                    splitBps[i] = equalSplit;
+                }
+                splitBps[commitCount - 1] += remainder;
+                IBaseEscrow.Resolution memory res = IBaseEscrow.Resolution({
+                    winnerIndices: committedIndices,
+                    splitBps: splitBps
+                });
+                _settleMatch(matchId, res);
+            }
 
         } else if (ps.phase == Phase.BET) {
             require(block.timestamp > ps.betDeadline, "Not timed out");
             require(!ps.folded[claimerIdx], "You folded");
             require(claimerIdx != _currentTurn[matchId], "You are the one who timed out");
             emit TimeoutClaimed(matchId, msg.sender, claimerIdx);
-            _settleMatchSingleWinner(matchId, claimerIdx);
+
+            // In multi-player games, all non-folded non-timed-out players share equally
+            uint8 timedOutIdx = _currentTurn[matchId];
+            uint8 eligibleCount = 0;
+            for (uint8 i = 0; i < uint8(m.players.length); i++) {
+                if (!ps.folded[i] && i != timedOutIdx) eligibleCount++;
+            }
+            if (eligibleCount == 1) {
+                _settleMatchSingleWinner(matchId, claimerIdx);
+            } else {
+                uint8[] memory eligibleIndices = new uint8[](eligibleCount);
+                uint256[] memory splitBps = new uint256[](eligibleCount);
+                uint8 found = 0;
+                for (uint8 i = 0; i < uint8(m.players.length); i++) {
+                    if (!ps.folded[i] && i != timedOutIdx) {
+                        eligibleIndices[found] = i;
+                        found++;
+                    }
+                }
+                uint256 equalSplit = 10000 / eligibleCount;
+                uint256 remainder = 10000 - (equalSplit * eligibleCount);
+                for (uint8 i = 0; i < eligibleCount; i++) {
+                    splitBps[i] = equalSplit;
+                }
+                splitBps[eligibleCount - 1] += remainder;
+                IBaseEscrow.Resolution memory res = IBaseEscrow.Resolution({
+                    winnerIndices: eligibleIndices,
+                    splitBps: splitBps
+                });
+                _settleMatch(matchId, res);
+            }
 
         } else if (ps.phase == Phase.REVEAL) {
             require(block.timestamp > ps.revealDeadline, "Not timed out");
@@ -533,29 +630,85 @@ contract PokerEngine is BaseEscrow {
                 "You did not reveal"
             );
             emit TimeoutClaimed(matchId, msg.sender, claimerIdx);
-            _settleMatchSingleWinner(matchId, claimerIdx);
+
+            // In multi-player games, all players who revealed share equally
+            uint8 revealCount = roundRevealCount[matchId][m.currentRound];
+            if (revealCount == 1) {
+                _settleMatchSingleWinner(matchId, claimerIdx);
+            } else {
+                uint8[] memory revealedIndices = new uint8[](revealCount);
+                uint256[] memory splitBps = new uint256[](revealCount);
+                uint8 found = 0;
+                for (uint8 i = 0; i < uint8(m.players.length); i++) {
+                    if (!ps.folded[i] && roundCommits[matchId][m.currentRound][m.players[i]].revealed) {
+                        revealedIndices[found] = i;
+                        found++;
+                    }
+                }
+                uint256 equalSplit = 10000 / revealCount;
+                uint256 remainder = 10000 - (equalSplit * revealCount);
+                for (uint8 i = 0; i < revealCount; i++) {
+                    splitBps[i] = equalSplit;
+                }
+                splitBps[revealCount - 1] += remainder;
+                IBaseEscrow.Resolution memory res = IBaseEscrow.Resolution({
+                    winnerIndices: revealedIndices,
+                    splitBps: splitBps
+                });
+                _settleMatch(matchId, res);
+            }
         }
     }
 
     /**
-     * @dev Mutual timeout. Refunds each player's full contribution minus penalty.
-     * Uses playerContributions (tracks stake + all raises via _addContribution).
+     * @dev Mutual timeout. Refunds each player's net contribution minus 1% penalty.
+     * Uses pro-rata distribution when mid-game rake has shrunk the available pool
+     * below the sum of all net contributions (same pattern as adminVoidMatch).
      */
     function _mutualTimeout(uint256 matchId) internal override {
         BaseMatch storage m = matches[matchId];
         m.status = MatchStatus.VOIDED;
 
+        uint256 effectivePot = m.totalPot - _midGameDistributed[matchId];
+
+        // First pass: compute each player's net contribution and clear their record.
+        uint256[] memory owed = new uint256[](m.players.length);
+        uint256 totalOwed = 0;
+        uint256 lastNonzeroIdx = type(uint256).max;
         for (uint i = 0; i < m.players.length; i++) {
             address player = m.players[i];
             uint256 contrib = playerContributions[matchId][player];
-            if (contrib == 0) continue;
-
-            uint256 penalty = (contrib * MUTUAL_TIMEOUT_PENALTY_BPS) / 10000;
-            uint256 refund = contrib - penalty;
-
+            uint256 received = _midGameReceived[matchId][player];
+            owed[i] = contrib > received ? contrib - received : 0;
+            totalOwed += owed[i];
+            if (owed[i] > 0) lastNonzeroIdx = i;
             playerContributions[matchId][player] = 0;
-            _safeTransferUSDC(player, refund);
-            _safeTransferUSDC(treasury, penalty);
+        }
+
+        // Second pass: refund pro-rata (if rake shrunk pool) with 1% penalty on each share.
+        uint256 distributed = 0;
+        uint256 totalPenalty = 0;
+        for (uint i = 0; i < m.players.length; i++) {
+            if (owed[i] == 0) continue;
+
+            uint256 proRata;
+            if (i == lastNonzeroIdx) {
+                // Last player with owed balance absorbs rounding dust.
+                proRata = effectivePot > distributed ? effectivePot - distributed : 0;
+            } else if (totalOwed <= effectivePot) {
+                proRata = owed[i];
+            } else {
+                proRata = (owed[i] * effectivePot) / totalOwed;
+            }
+
+            uint256 penalty = (proRata * MUTUAL_TIMEOUT_PENALTY_BPS) / 10000;
+            uint256 refund = proRata - penalty;
+            distributed += proRata;
+            totalPenalty += penalty;
+            _safeTransferUSDC(m.players[i], refund);
+        }
+        if (totalPenalty > 0) {
+            _safeTransferUSDC(treasury, totalPenalty);
         }
 
         emit MatchVoided(matchId, "Mutual timeout");
@@ -588,6 +741,9 @@ contract PokerEngine is BaseEscrow {
     // Turn tracking — stored separately since dynamic arrays in struct
     // can't hold all state cleanly
     mapping(uint256 => uint8) internal _currentTurn;
+    // Tracks total USDC bet into the current poker hand across all streets.
+    // Reset to 0 at the start of each new round. Used by _distributeRoundPot.
+    mapping(uint256 => uint256) internal _currentHandPot;
 
     function _requireCurrentTurn(uint256 matchId) internal view returns (uint8) {
         PokerState storage ps = _pokerState[matchId];
@@ -647,6 +803,80 @@ contract PokerEngine is BaseEscrow {
         roundRevealCount[matchId][m.currentRound] = 0;
     }
 
+    function _distributeRoundPot(uint256 matchId, uint8 winnerIdx) internal {
+        BaseMatch storage m = matches[matchId];
+
+        // Use _currentHandPot which accumulates bets across ALL streets in this hand.
+        // streetBets is reset per-street so cannot be used here.
+        uint256 roundPot = _currentHandPot[matchId];
+
+        if (roundPot > 0) {
+            // Take rake on the round pot so mid-game betting is not rake-free.
+            uint256 totalRake = (roundPot * RAKE_BPS) / 10000;
+            uint256 devRoyalty = (roundPot * DEV_ROYALTY_BPS) / 10000;
+            uint256 protocolRake = totalRake - devRoyalty;
+
+            address dev = _getLogicDeveloper(m.logicId);
+            if (dev != address(0)) {
+                _safeTransferUSDC(dev, devRoyalty);
+            } else {
+                protocolRake += devRoyalty;
+            }
+            _safeTransferUSDC(treasury, protocolRake);
+
+            uint256 winnerShare = roundPot - totalRake;
+            address winner = m.players[winnerIdx];
+            _safeTransferUSDC(winner, winnerShare);
+
+            // _midGameDistributed tracks gross pot removed from escrow (including rake already paid),
+            // so final settlement does not re-rake this amount via effectivePot.
+            // _midGameReceived tracks only what the winner pocketed (for accurate void refunds).
+            _midGameDistributed[matchId] += roundPot;
+            _midGameReceived[matchId][winner] += winnerShare;
+
+            emit RoundPotDistributed(matchId, m.currentRound, winner, winnerShare);
+        }
+    }
+
+    function _distributeRoundPotSplit(uint256 matchId, IBaseEscrow.Resolution memory res) internal {
+        BaseMatch storage m = matches[matchId];
+        uint256 roundPot = _currentHandPot[matchId];
+        if (roundPot == 0) return;
+
+        // Take rake on the round pot before splitting.
+        uint256 totalRake = (roundPot * RAKE_BPS) / 10000;
+        uint256 devRoyalty = (roundPot * DEV_ROYALTY_BPS) / 10000;
+        uint256 protocolRake = totalRake - devRoyalty;
+
+        address dev = _getLogicDeveloper(m.logicId);
+        if (dev != address(0)) {
+            _safeTransferUSDC(dev, devRoyalty);
+        } else {
+            protocolRake += devRoyalty;
+        }
+        _safeTransferUSDC(treasury, protocolRake);
+
+        uint256 remainingPot = roundPot - totalRake;
+        uint256 distributed = 0;
+        for (uint i = 0; i < res.winnerIndices.length; i++) {
+            address winner = m.players[res.winnerIndices[i]];
+            uint256 share;
+            if (i == res.winnerIndices.length - 1) {
+                share = remainingPot - distributed;
+            } else {
+                share = (remainingPot * res.splitBps[i]) / 10000;
+            }
+            distributed += share;
+            _safeTransferUSDC(winner, share);
+            _midGameReceived[matchId][winner] += share;
+        }
+
+        // Record gross round pot as distributed so effectivePot in final settlement is correct.
+        _midGameDistributed[matchId] += roundPot;
+
+        emit RoundPotDistributed(matchId, m.currentRound, address(0), remainingPot);
+    }
+
     function _startNextRound(uint256 matchId) internal {
         BaseMatch storage m = matches[matchId];
         PokerState storage ps = _pokerState[matchId];
@@ -661,12 +891,14 @@ contract PokerEngine is BaseEscrow {
             ps.folded[i] = false;
         }
 
+        _currentTurn[matchId] = 0;
+        _currentHandPot[matchId] = 0;
         _resetStreetState(matchId);
         ps.phase = Phase.COMMIT;
         ps.commitDeadline = block.timestamp + COMMIT_WINDOW;
     }
 
-    function _findLastActivePlayer(uint256 matchId) internal view returns (uint8) {
+    function _findSoleActivePlayer(uint256 matchId) internal view returns (uint8) {
         PokerState storage ps = _pokerState[matchId];
         for (uint8 i = 0; i < uint8(ps.folded.length); i++) {
             if (!ps.folded[i]) return i;

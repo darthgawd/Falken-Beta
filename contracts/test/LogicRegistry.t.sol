@@ -6,542 +6,599 @@ import "../src/core/LogicRegistry.sol";
 
 contract LogicRegistryTest is Test {
     LogicRegistry registry;
-    address owner = address(this);
-    address developer = address(0x123);
-    address newOwner = address(0xABC);
-    address escrow = address(0x456);
-    address nobody = address(0x999);
 
-    string constant IPFS_CID = "QmTest123";
-    string constant IPFS_CID_2 = "QmTest456";
-    bytes32 logicId;
-    bytes32 logicId2;
+    address owner     = address(this); // test contract deploys, so it's owner
+    address developer = address(0x1111);
+    address escrow    = address(0x2222);
+    address stranger  = address(0x3333);
 
-    event LogicRegistered(bytes32 indexed logicId, string ipfsCid, address indexed developer, bool bettingEnabled, uint8 maxStreets);
-    event LogicVerified(bytes32 indexed logicId, bool status);
-    event LogicActiveSet(bytes32 indexed logicId, bool active);
-    event BettingEnabledSet(bytes32 indexed logicId, bool enabled);
-    event MaxStreetsSet(bytes32 indexed logicId, uint8 maxStreets);
-    event EscrowAuthorized(address indexed escrow, bool status);
-    event VolumeRecorded(bytes32 indexed logicId, uint256 amount);
+    string constant CID  = "QmPokerBlitz123";
+    string constant CID2 = "QmRPS456";
+    bytes32 LOGIC_ID;
+    bytes32 LOGIC_ID2;
 
     function setUp() public {
         registry = new LogicRegistry();
-        logicId = keccak256(abi.encodePacked(IPFS_CID));
-        logicId2 = keccak256(abi.encodePacked(IPFS_CID_2));
+        LOGIC_ID  = keccak256(abi.encodePacked(CID));
+        LOGIC_ID2 = keccak256(abi.encodePacked(CID2));
     }
 
     // ==================== CONSTRUCTOR ====================
 
-    function test_Constructor() public view {
-        assertEq(registry.getRegistryCount(), 0);
+    function test_Constructor_OwnerIsDeployer() public view {
         assertEq(registry.owner(), owner);
     }
 
-    // ==================== OWNABLE2STEP ====================
+    function test_Constructor_EmptyRegistry() public view {
+        assertEq(registry.getRegistryCount(), 0);
+        assertEq(registry.getAllLogicIds().length, 0);
+    }
+
+    // ==================== REGISTER LOGIC ====================
+
+    function test_RegisterLogic_HappyPath() public {
+        bytes32 id = registry.registerLogic(CID, developer, true, 4);
+
+        assertEq(id, LOGIC_ID);
+
+        LogicRegistry.GameLogic memory g = registry.getGameLogic(id);
+        assertEq(g.ipfsCid,        CID);
+        assertEq(g.developer,      developer);
+        assertEq(g.bettingEnabled, true);
+        assertEq(g.maxStreets,     4);
+        assertEq(g.isActive,       true);
+        assertEq(g.isVerified,     false);
+        assertEq(g.totalVolume,    0);
+        assertEq(g.createdAt,      block.timestamp);
+    }
+
+    function test_RegisterLogic_ReturnsCorrectId() public {
+        bytes32 id = registry.registerLogic(CID, developer, false, 1);
+        assertEq(id, keccak256(abi.encodePacked(CID)));
+    }
+
+    function test_RegisterLogic_AppendsToAllLogicIds() public {
+        registry.registerLogic(CID,  developer, true, 4);
+        registry.registerLogic(CID2, developer, false, 1);
+
+        bytes32[] memory ids = registry.getAllLogicIds();
+        assertEq(ids.length, 2);
+        assertEq(ids[0], LOGIC_ID);
+        assertEq(ids[1], LOGIC_ID2);
+    }
+
+    function test_RegisterLogic_EmptyCid_Reverts() public {
+        vm.expectRevert("Empty CID");
+        registry.registerLogic("", developer, false, 1);
+    }
+
+    function test_RegisterLogic_ZeroDeveloper_Reverts() public {
+        vm.expectRevert("Invalid developer");
+        registry.registerLogic(CID, address(0), false, 1);
+    }
+
+    function test_RegisterLogic_Duplicate_Reverts() public {
+        registry.registerLogic(CID, developer, false, 1);
+        vm.expectRevert("Logic already registered");
+        registry.registerLogic(CID, developer, false, 1);
+    }
+
+    function test_RegisterLogic_NotOwner_Reverts() public {
+        vm.prank(stranger);
+        vm.expectRevert();
+        registry.registerLogic(CID, developer, false, 1);
+    }
+
+    function test_RegisterLogic_WhenPaused_Reverts() public {
+        registry.pause();
+        vm.expectRevert();
+        registry.registerLogic(CID, developer, false, 1);
+    }
+
+    function test_RegisterLogic_EmitsEvent() public {
+        vm.expectEmit(true, true, false, true);
+        emit LogicRegistry.LogicRegistered(LOGIC_ID, CID, developer, true, 4);
+        registry.registerLogic(CID, developer, true, 4);
+    }
+
+    // ==================== REGISTER SIMPLE GAME ====================
+
+    function test_RegisterSimpleGame_HappyPath() public {
+        bytes32 id = registry.registerSimpleGame(CID, developer);
+
+        LogicRegistry.GameLogic memory g = registry.getGameLogic(id);
+        assertEq(g.ipfsCid,        CID);
+        assertEq(g.developer,      developer);
+        assertEq(g.bettingEnabled, false);
+        assertEq(g.maxStreets,     0);
+        assertEq(g.isActive,       true);
+        assertEq(g.isVerified,     false);
+    }
+
+    function test_RegisterSimpleGame_EmptyCid_Reverts() public {
+        vm.expectRevert("Empty CID");
+        registry.registerSimpleGame("", developer);
+    }
+
+    function test_RegisterSimpleGame_ZeroDeveloper_Reverts() public {
+        vm.expectRevert("Invalid developer");
+        registry.registerSimpleGame(CID, address(0));
+    }
+
+    function test_RegisterSimpleGame_Duplicate_Reverts() public {
+        registry.registerSimpleGame(CID, developer);
+        vm.expectRevert("Logic already registered");
+        registry.registerSimpleGame(CID, developer);
+    }
+
+    function test_RegisterSimpleGame_NotOwner_Reverts() public {
+        vm.prank(stranger);
+        vm.expectRevert();
+        registry.registerSimpleGame(CID, developer);
+    }
+
+    function test_RegisterSimpleGame_WhenPaused_Reverts() public {
+        registry.pause();
+        vm.expectRevert();
+        registry.registerSimpleGame(CID, developer);
+    }
+
+    function test_RegisterSimpleGame_SameCidAsRegisterLogic_Reverts() public {
+        // Both hash the CID the same way — same CID causes a conflict
+        registry.registerLogic(CID, developer, true, 4);
+        vm.expectRevert("Logic already registered");
+        registry.registerSimpleGame(CID, developer);
+    }
+
+    function test_RegisterSimpleGame_EmitsEvent() public {
+        vm.expectEmit(true, true, false, true);
+        emit LogicRegistry.LogicRegistered(LOGIC_ID, CID, developer, false, 0);
+        registry.registerSimpleGame(CID, developer);
+    }
+
+    // ==================== VERIFICATION ====================
+
+    function test_SetVerificationStatus_True() public {
+        registry.registerLogic(CID, developer, false, 1);
+        registry.setVerificationStatus(LOGIC_ID, true);
+        assertTrue(registry.isVerified(LOGIC_ID));
+    }
+
+    function test_SetVerificationStatus_False() public {
+        registry.registerLogic(CID, developer, false, 1);
+        registry.setVerificationStatus(LOGIC_ID, true);
+        registry.setVerificationStatus(LOGIC_ID, false);
+        assertFalse(registry.isVerified(LOGIC_ID));
+    }
+
+    function test_SetVerificationStatus_LogicNotFound_Reverts() public {
+        vm.expectRevert("Logic not found");
+        registry.setVerificationStatus(LOGIC_ID, true);
+    }
+
+    function test_SetVerificationStatus_NotOwner_Reverts() public {
+        registry.registerLogic(CID, developer, false, 1);
+        vm.prank(stranger);
+        vm.expectRevert();
+        registry.setVerificationStatus(LOGIC_ID, true);
+    }
+
+    function test_SetVerificationStatus_EmitsEvent() public {
+        registry.registerLogic(CID, developer, false, 1);
+        vm.expectEmit(true, false, false, true);
+        emit LogicRegistry.LogicVerified(LOGIC_ID, true);
+        registry.setVerificationStatus(LOGIC_ID, true);
+    }
+
+    // ==================== ACTIVE / DEACTIVATION ====================
+
+    function test_SetActive_Deactivate() public {
+        registry.registerLogic(CID, developer, false, 1);
+        assertTrue(registry.isActive(LOGIC_ID)); // starts active
+
+        registry.setActive(LOGIC_ID, false);
+        assertFalse(registry.isActive(LOGIC_ID));
+    }
+
+    function test_SetActive_Reactivate() public {
+        registry.registerLogic(CID, developer, false, 1);
+        registry.setActive(LOGIC_ID, false);
+        registry.setActive(LOGIC_ID, true);
+        assertTrue(registry.isActive(LOGIC_ID));
+    }
+
+    function test_SetActive_LogicNotFound_Reverts() public {
+        vm.expectRevert("Logic not found");
+        registry.setActive(LOGIC_ID, false);
+    }
+
+    function test_SetActive_NotOwner_Reverts() public {
+        registry.registerLogic(CID, developer, false, 1);
+        vm.prank(stranger);
+        vm.expectRevert();
+        registry.setActive(LOGIC_ID, false);
+    }
+
+    function test_SetActive_EmitsEvent() public {
+        registry.registerLogic(CID, developer, false, 1);
+        vm.expectEmit(true, false, false, true);
+        emit LogicRegistry.LogicActiveSet(LOGIC_ID, false);
+        registry.setActive(LOGIC_ID, false);
+    }
+
+    // ==================== BETTING CONFIGURATION ====================
+
+    function test_SetBettingEnabled_Enable() public {
+        registry.registerSimpleGame(CID, developer); // starts false
+        assertFalse(registry.isBettingEnabled(LOGIC_ID));
+
+        registry.setBettingEnabled(LOGIC_ID, true);
+        assertTrue(registry.isBettingEnabled(LOGIC_ID));
+    }
+
+    function test_SetBettingEnabled_Disable() public {
+        registry.registerLogic(CID, developer, true, 4);
+        registry.setBettingEnabled(LOGIC_ID, false);
+        assertFalse(registry.isBettingEnabled(LOGIC_ID));
+    }
+
+    function test_SetBettingEnabled_LogicNotFound_Reverts() public {
+        vm.expectRevert("Logic not found");
+        registry.setBettingEnabled(LOGIC_ID, true);
+    }
+
+    function test_SetBettingEnabled_NotOwner_Reverts() public {
+        registry.registerLogic(CID, developer, false, 1);
+        vm.prank(stranger);
+        vm.expectRevert();
+        registry.setBettingEnabled(LOGIC_ID, true);
+    }
+
+    function test_SetBettingEnabled_EmitsEvent() public {
+        registry.registerLogic(CID, developer, false, 1);
+        vm.expectEmit(true, false, false, true);
+        emit LogicRegistry.BettingEnabledSet(LOGIC_ID, true);
+        registry.setBettingEnabled(LOGIC_ID, true);
+    }
+
+    // ==================== MAX STREETS ====================
+
+    function test_SetMaxStreets() public {
+        registry.registerLogic(CID, developer, true, 1);
+        assertEq(registry.getMaxStreets(LOGIC_ID), 1);
+
+        registry.setMaxStreets(LOGIC_ID, 4);
+        assertEq(registry.getMaxStreets(LOGIC_ID), 4);
+    }
+
+    function test_SetMaxStreets_LogicNotFound_Reverts() public {
+        vm.expectRevert("Logic not found");
+        registry.setMaxStreets(LOGIC_ID, 4);
+    }
+
+    function test_SetMaxStreets_NotOwner_Reverts() public {
+        registry.registerLogic(CID, developer, true, 1);
+        vm.prank(stranger);
+        vm.expectRevert();
+        registry.setMaxStreets(LOGIC_ID, 4);
+    }
+
+    function test_SetMaxStreets_EmitsEvent() public {
+        registry.registerLogic(CID, developer, true, 1);
+        vm.expectEmit(true, false, false, true);
+        emit LogicRegistry.MaxStreetsSet(LOGIC_ID, 5);
+        registry.setMaxStreets(LOGIC_ID, 5);
+    }
+
+    // ==================== PAUSE / UNPAUSE ====================
+
+    function test_Pause_BlocksRegistration() public {
+        registry.pause();
+        vm.expectRevert();
+        registry.registerLogic(CID, developer, false, 1);
+    }
+
+    function test_Unpause_RestoresRegistration() public {
+        registry.pause();
+        registry.unpause();
+        registry.registerLogic(CID, developer, false, 1);
+        assertEq(registry.getRegistryCount(), 1);
+    }
+
+    function test_Pause_NotOwner_Reverts() public {
+        vm.prank(stranger);
+        vm.expectRevert();
+        registry.pause();
+    }
+
+    function test_Unpause_NotOwner_Reverts() public {
+        registry.pause();
+        vm.prank(stranger);
+        vm.expectRevert();
+        registry.unpause();
+    }
+
+    function test_Pause_AdminSettersStillWork() public {
+        // setVerificationStatus, setActive, etc. are NOT gated by whenNotPaused
+        registry.registerLogic(CID, developer, false, 1);
+        registry.pause();
+
+        registry.setVerificationStatus(LOGIC_ID, true);
+        registry.setActive(LOGIC_ID, false);
+
+        assertTrue(registry.isVerified(LOGIC_ID));
+        assertFalse(registry.isActive(LOGIC_ID));
+    }
+
+    // ==================== ESCROW AUTHORIZATION ====================
+
+    function test_SetAuthorizedEscrow_Authorize() public {
+        registry.setAuthorizedEscrow(escrow, true);
+        assertTrue(registry.authorizedEscrows(escrow));
+        assertTrue(registry.isAuthorizedEscrow(escrow));
+    }
+
+    function test_SetAuthorizedEscrow_Deauthorize() public {
+        registry.setAuthorizedEscrow(escrow, true);
+        registry.setAuthorizedEscrow(escrow, false);
+        assertFalse(registry.isAuthorizedEscrow(escrow));
+    }
+
+    function test_SetAuthorizedEscrow_ZeroAddress_Reverts() public {
+        vm.expectRevert("Invalid escrow");
+        registry.setAuthorizedEscrow(address(0), true);
+    }
+
+    function test_SetAuthorizedEscrow_NotOwner_Reverts() public {
+        vm.prank(stranger);
+        vm.expectRevert();
+        registry.setAuthorizedEscrow(escrow, true);
+    }
+
+    function test_SetAuthorizedEscrow_EmitsEvent() public {
+        vm.expectEmit(true, false, false, true);
+        emit LogicRegistry.EscrowAuthorized(escrow, true);
+        registry.setAuthorizedEscrow(escrow, true);
+    }
+
+    // ==================== RECORD VOLUME ====================
+
+    function test_RecordVolume_HappyPath() public {
+        registry.registerLogic(CID, developer, false, 1);
+        registry.setAuthorizedEscrow(escrow, true);
+
+        vm.prank(escrow);
+        registry.recordVolume(LOGIC_ID, 500 * 1e6);
+
+        assertEq(registry.getVolume(LOGIC_ID), 500 * 1e6);
+    }
+
+    function test_RecordVolume_Accumulates() public {
+        registry.registerLogic(CID, developer, false, 1);
+        registry.setAuthorizedEscrow(escrow, true);
+
+        vm.prank(escrow); registry.recordVolume(LOGIC_ID, 100 * 1e6);
+        vm.prank(escrow); registry.recordVolume(LOGIC_ID, 250 * 1e6);
+
+        assertEq(registry.getVolume(LOGIC_ID), 350 * 1e6);
+    }
+
+    function test_RecordVolume_NotAuthorized_Reverts() public {
+        registry.registerLogic(CID, developer, false, 1);
+
+        vm.prank(stranger);
+        vm.expectRevert("Not authorized escrow");
+        registry.recordVolume(LOGIC_ID, 100 * 1e6);
+    }
+
+    function test_RecordVolume_LogicNotFound_Reverts() public {
+        registry.setAuthorizedEscrow(escrow, true);
+
+        vm.prank(escrow);
+        vm.expectRevert("Logic not found");
+        registry.recordVolume(LOGIC_ID, 100 * 1e6);
+    }
+
+    function test_RecordVolume_AfterDeauthorize_Reverts() public {
+        registry.registerLogic(CID, developer, false, 1);
+        registry.setAuthorizedEscrow(escrow, true);
+        registry.setAuthorizedEscrow(escrow, false);
+
+        vm.prank(escrow);
+        vm.expectRevert("Not authorized escrow");
+        registry.recordVolume(LOGIC_ID, 100 * 1e6);
+    }
+
+    function test_RecordVolume_MultipleEscrows() public {
+        address escrow2 = address(0x4444);
+        registry.registerLogic(CID, developer, false, 1);
+        registry.setAuthorizedEscrow(escrow,  true);
+        registry.setAuthorizedEscrow(escrow2, true);
+
+        vm.prank(escrow);  registry.recordVolume(LOGIC_ID, 100 * 1e6);
+        vm.prank(escrow2); registry.recordVolume(LOGIC_ID, 200 * 1e6);
+
+        assertEq(registry.getVolume(LOGIC_ID), 300 * 1e6);
+    }
+
+    function test_RecordVolume_EmitsEvent() public {
+        registry.registerLogic(CID, developer, false, 1);
+        registry.setAuthorizedEscrow(escrow, true);
+
+        vm.expectEmit(true, false, false, true);
+        emit LogicRegistry.VolumeRecorded(LOGIC_ID, 100 * 1e6);
+        vm.prank(escrow);
+        registry.recordVolume(LOGIC_ID, 100 * 1e6);
+    }
+
+    // ==================== VIEW FUNCTIONS ====================
+
+    function test_GetDeveloper() public {
+        registry.registerLogic(CID, developer, false, 1);
+        assertEq(registry.getDeveloper(LOGIC_ID), developer);
+    }
+
+    function test_GetIpfsCid() public {
+        registry.registerLogic(CID, developer, false, 1);
+        assertEq(registry.getIpfsCid(LOGIC_ID), CID);
+    }
+
+    function test_GetMaxStreets_SimpleGame_IsZero() public {
+        registry.registerSimpleGame(CID, developer);
+        assertEq(registry.getMaxStreets(LOGIC_ID), 0);
+    }
+
+    function test_IsBettingEnabled_Default_False() public {
+        registry.registerSimpleGame(CID, developer);
+        assertFalse(registry.isBettingEnabled(LOGIC_ID));
+    }
+
+    function test_IsActive_DefaultTrue() public {
+        registry.registerLogic(CID, developer, false, 1);
+        assertTrue(registry.isActive(LOGIC_ID));
+    }
+
+    function test_IsVerified_DefaultFalse() public {
+        registry.registerLogic(CID, developer, false, 1);
+        assertFalse(registry.isVerified(LOGIC_ID));
+    }
+
+    function test_GetVolume_DefaultZero() public {
+        registry.registerLogic(CID, developer, false, 1);
+        assertEq(registry.getVolume(LOGIC_ID), 0);
+    }
+
+    function test_UnregisteredLogic_ViewsReturnDefaults() public view {
+        // No revert — just zero/false defaults from mappings
+        assertEq(registry.getDeveloper(LOGIC_ID),      address(0));
+        assertEq(registry.getIpfsCid(LOGIC_ID),        "");
+        assertEq(registry.getMaxStreets(LOGIC_ID),     0);
+        assertFalse(registry.isBettingEnabled(LOGIC_ID));
+        assertFalse(registry.isActive(LOGIC_ID));
+        assertFalse(registry.isVerified(LOGIC_ID));
+        assertEq(registry.getVolume(LOGIC_ID),         0);
+    }
+
+    // ==================== REGISTRY COUNT & DISCOVERY ====================
+
+    function test_GetRegistryCount_Empty() public view {
+        assertEq(registry.getRegistryCount(), 0);
+    }
+
+    function test_GetRegistryCount_AfterRegistrations() public {
+        registry.registerLogic(CID,  developer, true,  4);
+        registry.registerLogic(CID2, developer, false, 1);
+        assertEq(registry.getRegistryCount(), 2);
+    }
+
+    function test_GetAllLogicIds_Empty() public view {
+        assertEq(registry.getAllLogicIds().length, 0);
+    }
+
+    function test_GetAllLogicIds_Order() public {
+        registry.registerLogic(CID,  developer, true, 4);
+        registry.registerLogic(CID2, developer, false, 1);
+
+        bytes32[] memory ids = registry.getAllLogicIds();
+        assertEq(ids[0], LOGIC_ID);
+        assertEq(ids[1], LOGIC_ID2);
+    }
+
+    // ==================== GET GAME LOGIC ====================
+
+    function test_GetGameLogic_HappyPath() public {
+        registry.registerLogic(CID, developer, true, 4);
+        LogicRegistry.GameLogic memory g = registry.getGameLogic(LOGIC_ID);
+        assertEq(g.ipfsCid,        CID);
+        assertEq(g.developer,      developer);
+        assertEq(g.bettingEnabled, true);
+        assertEq(g.maxStreets,     4);
+        assertEq(g.isActive,       true);
+        assertEq(g.isVerified,     false);
+        assertEq(g.totalVolume,    0);
+    }
+
+    function test_GetGameLogic_NotFound_Reverts() public {
+        vm.expectRevert("Logic not found");
+        registry.getGameLogic(LOGIC_ID);
+    }
+
+    // ==================== BATCH OPERATIONS ====================
+
+    function test_GetGameLogicsBatch_HappyPath() public {
+        registry.registerLogic(CID,  developer, true,  4);
+        registry.registerLogic(CID2, developer, false, 1);
+
+        bytes32[] memory ids = new bytes32[](2);
+        ids[0] = LOGIC_ID;
+        ids[1] = LOGIC_ID2;
+
+        LogicRegistry.GameLogic[] memory results = registry.getGameLogicsBatch(ids);
+        assertEq(results.length,       2);
+        assertEq(results[0].ipfsCid,   CID);
+        assertEq(results[0].maxStreets, 4);
+        assertEq(results[1].ipfsCid,   CID2);
+        assertEq(results[1].maxStreets, 1);
+    }
+
+    function test_GetGameLogicsBatch_InvalidId_Reverts() public {
+        registry.registerLogic(CID, developer, true, 4);
+
+        bytes32[] memory ids = new bytes32[](2);
+        ids[0] = LOGIC_ID;
+        ids[1] = LOGIC_ID2; // not registered
+
+        vm.expectRevert("Logic not found");
+        registry.getGameLogicsBatch(ids);
+    }
+
+    function test_GetGameLogicsBatch_EmptyArray() public view {
+        bytes32[] memory ids    = new bytes32[](0);
+        LogicRegistry.GameLogic[] memory results = registry.getGameLogicsBatch(ids);
+        assertEq(results.length, 0);
+    }
+
+    // ==================== OWNERSHIP (Ownable2Step) ====================
 
     function test_TransferOwnership_TwoStep() public {
+        address newOwner = address(0xBEEF);
         registry.transferOwnership(newOwner);
-        // Owner hasn't changed yet — pending
-        assertEq(registry.owner(), owner);
+
+        // Pending — original owner still in control
+        assertEq(registry.owner(),        owner);
         assertEq(registry.pendingOwner(), newOwner);
 
-        // New owner accepts
         vm.prank(newOwner);
         registry.acceptOwnership();
         assertEq(registry.owner(), newOwner);
     }
 
     function test_TransferOwnership_OnlyPendingCanAccept() public {
+        address newOwner = address(0xBEEF);
         registry.transferOwnership(newOwner);
 
-        vm.prank(nobody);
+        vm.prank(stranger);
         vm.expectRevert();
         registry.acceptOwnership();
     }
 
-    function test_TransferOwnership_NotOwner() public {
-        vm.prank(nobody);
-        vm.expectRevert();
+    function test_NewOwner_CanRegisterLogic() public {
+        address newOwner = address(0xBEEF);
         registry.transferOwnership(newOwner);
-    }
+        vm.prank(newOwner); registry.acceptOwnership();
 
-    // ==================== REGISTRATION ====================
-
-    function test_RegisterLogic() public {
-        vm.expectEmit(true, true, false, true);
-        emit LogicRegistered(logicId, IPFS_CID, developer, true, 4);
-
-        bytes32 id = registry.registerLogic(IPFS_CID, developer, true, 4);
-
-        assertEq(id, logicId);
+        vm.prank(newOwner);
+        registry.registerLogic(CID, developer, false, 1);
         assertEq(registry.getRegistryCount(), 1);
-
-        LogicRegistry.GameLogic memory game = registry.getGameLogic(id);
-        assertEq(game.ipfsCid, IPFS_CID);
-        assertEq(game.developer, developer);
-        assertFalse(game.isVerified);
-        assertTrue(game.isActive);
-        assertTrue(game.bettingEnabled);
-        assertEq(game.maxStreets, 4);
-        assertEq(game.totalVolume, 0);
-        assertTrue(game.createdAt > 0);
     }
 
-    function test_RegisterSimpleGame() public {
-        bytes32 id = registry.registerSimpleGame(IPFS_CID, developer);
+    function test_OldOwner_CannotRegisterAfterTransfer() public {
+        address newOwner = address(0xBEEF);
+        registry.transferOwnership(newOwner);
+        vm.prank(newOwner); registry.acceptOwnership();
 
-        LogicRegistry.GameLogic memory game = registry.getGameLogic(id);
-        assertFalse(game.bettingEnabled);
-        assertEq(game.maxStreets, 0);
-        assertTrue(game.isActive);
-    }
-
-    function test_RegisterLogic_EmptyCID() public {
-        vm.expectRevert("Empty CID");
-        registry.registerLogic("", developer, true, 4);
-    }
-
-    function test_RegisterSimpleGame_EmptyCID() public {
-        vm.expectRevert("Empty CID");
-        registry.registerSimpleGame("", developer);
-    }
-
-    function test_RegisterLogic_InvalidDeveloper() public {
-        vm.expectRevert("Invalid developer");
-        registry.registerLogic(IPFS_CID, address(0), true, 4);
-    }
-
-    function test_RegisterSimpleGame_InvalidDeveloper() public {
-        vm.expectRevert("Invalid developer");
-        registry.registerSimpleGame(IPFS_CID, address(0));
-    }
-
-    function test_RegisterLogic_Duplicate() public {
-        registry.registerLogic(IPFS_CID, developer, true, 4);
-
-        vm.expectRevert("Logic already registered");
-        registry.registerLogic(IPFS_CID, developer, true, 4);
-    }
-
-    function test_RegisterSimpleGame_Duplicate() public {
-        registry.registerSimpleGame(IPFS_CID, developer);
-
-        vm.expectRevert("Logic already registered");
-        registry.registerSimpleGame(IPFS_CID, developer);
-    }
-
-    function test_RegisterLogic_NotOwner() public {
-        vm.prank(nobody);
+        vm.prank(owner);
         vm.expectRevert();
-        registry.registerLogic(IPFS_CID, developer, true, 4);
-    }
-
-    function test_RegisterSimpleGame_NotOwner() public {
-        vm.prank(nobody);
-        vm.expectRevert();
-        registry.registerSimpleGame(IPFS_CID, developer);
-    }
-
-    function test_RegisterLogic_WhenPaused() public {
-        registry.pause();
-
-        vm.expectRevert();
-        registry.registerLogic(IPFS_CID, developer, true, 4);
-    }
-
-    function test_RegisterSimpleGame_WhenPaused() public {
-        registry.pause();
-
-        vm.expectRevert();
-        registry.registerSimpleGame(IPFS_CID, developer);
-    }
-
-    // ==================== VERIFICATION ====================
-
-    function test_SetVerificationStatus() public {
-        registry.registerLogic(IPFS_CID, developer, true, 4);
-
-        vm.expectEmit(true, false, false, true);
-        emit LogicVerified(logicId, true);
-        registry.setVerificationStatus(logicId, true);
-        assertTrue(registry.isVerified(logicId));
-
-        registry.setVerificationStatus(logicId, false);
-        assertFalse(registry.isVerified(logicId));
-    }
-
-    function test_SetVerificationStatus_NotFound() public {
-        vm.expectRevert("Logic not found");
-        registry.setVerificationStatus(logicId, true);
-    }
-
-    function test_SetVerificationStatus_NotOwner() public {
-        registry.registerLogic(IPFS_CID, developer, true, 4);
-
-        vm.prank(nobody);
-        vm.expectRevert();
-        registry.setVerificationStatus(logicId, true);
-    }
-
-    // ==================== ACTIVATION / DEACTIVATION ====================
-
-    function test_SetActive_Deactivate() public {
-        registry.registerLogic(IPFS_CID, developer, true, 4);
-        assertTrue(registry.isActive(logicId));
-
-        vm.expectEmit(true, false, false, true);
-        emit LogicActiveSet(logicId, false);
-        registry.setActive(logicId, false);
-        assertFalse(registry.isActive(logicId));
-    }
-
-    function test_SetActive_Reactivate() public {
-        registry.registerLogic(IPFS_CID, developer, true, 4);
-        registry.setActive(logicId, false);
-        assertFalse(registry.isActive(logicId));
-
-        registry.setActive(logicId, true);
-        assertTrue(registry.isActive(logicId));
-    }
-
-    function test_SetActive_NotFound() public {
-        vm.expectRevert("Logic not found");
-        registry.setActive(logicId, false);
-    }
-
-    function test_SetActive_NotOwner() public {
-        registry.registerLogic(IPFS_CID, developer, true, 4);
-
-        vm.prank(nobody);
-        vm.expectRevert();
-        registry.setActive(logicId, false);
-    }
-
-    // ==================== BETTING CONFIGURATION ====================
-
-    function test_SetBettingEnabled() public {
-        registry.registerLogic(IPFS_CID, developer, false, 0);
-        assertFalse(registry.isBettingEnabled(logicId));
-
-        vm.expectEmit(true, false, false, true);
-        emit BettingEnabledSet(logicId, true);
-        registry.setBettingEnabled(logicId, true);
-        assertTrue(registry.isBettingEnabled(logicId));
-
-        registry.setBettingEnabled(logicId, false);
-        assertFalse(registry.isBettingEnabled(logicId));
-    }
-
-    function test_SetBettingEnabled_NotFound() public {
-        vm.expectRevert("Logic not found");
-        registry.setBettingEnabled(logicId, true);
-    }
-
-    function test_SetBettingEnabled_NotOwner() public {
-        registry.registerLogic(IPFS_CID, developer, true, 4);
-
-        vm.prank(nobody);
-        vm.expectRevert();
-        registry.setBettingEnabled(logicId, false);
-    }
-
-    function test_SetMaxStreets() public {
-        registry.registerLogic(IPFS_CID, developer, true, 1);
-        assertEq(registry.getMaxStreets(logicId), 1);
-
-        vm.expectEmit(true, false, false, true);
-        emit MaxStreetsSet(logicId, 4);
-        registry.setMaxStreets(logicId, 4);
-        assertEq(registry.getMaxStreets(logicId), 4);
-
-        registry.setMaxStreets(logicId, 5);
-        assertEq(registry.getMaxStreets(logicId), 5);
-    }
-
-    function test_SetMaxStreets_NotFound() public {
-        vm.expectRevert("Logic not found");
-        registry.setMaxStreets(logicId, 4);
-    }
-
-    function test_SetMaxStreets_NotOwner() public {
-        registry.registerLogic(IPFS_CID, developer, true, 4);
-
-        vm.prank(nobody);
-        vm.expectRevert();
-        registry.setMaxStreets(logicId, 1);
-    }
-
-    // ==================== PAUSABLE ====================
-
-    function test_Pause() public {
-        registry.pause();
-        assertTrue(registry.paused());
-    }
-
-    function test_Unpause() public {
-        registry.pause();
-        registry.unpause();
-        assertFalse(registry.paused());
-    }
-
-    function test_Pause_NotOwner() public {
-        vm.prank(nobody);
-        vm.expectRevert();
-        registry.pause();
-    }
-
-    function test_Unpause_NotOwner() public {
-        registry.pause();
-
-        vm.prank(nobody);
-        vm.expectRevert();
-        registry.unpause();
-    }
-
-    function test_AdminFunctions_WorkWhenPaused() public {
-        // Registration requires not-paused, but admin config functions still work
-        registry.registerLogic(IPFS_CID, developer, true, 4);
-        registry.pause();
-
-        // These should all still work while paused
-        registry.setVerificationStatus(logicId, true);
-        registry.setActive(logicId, false);
-        registry.setBettingEnabled(logicId, false);
-        registry.setMaxStreets(logicId, 1);
-        registry.setAuthorizedEscrow(escrow, true);
-
-        assertTrue(registry.isVerified(logicId));
-        assertFalse(registry.isActive(logicId));
-        assertFalse(registry.isBettingEnabled(logicId));
-        assertEq(registry.getMaxStreets(logicId), 1);
-        assertTrue(registry.isAuthorizedEscrow(escrow));
-    }
-
-    // ==================== ESCROW AUTHORIZATION ====================
-
-    function test_SetAuthorizedEscrow() public {
-        vm.expectEmit(true, false, false, true);
-        emit EscrowAuthorized(escrow, true);
-        registry.setAuthorizedEscrow(escrow, true);
-        assertTrue(registry.isAuthorizedEscrow(escrow));
-
-        registry.setAuthorizedEscrow(escrow, false);
-        assertFalse(registry.isAuthorizedEscrow(escrow));
-    }
-
-    function test_SetAuthorizedEscrow_InvalidAddress() public {
-        vm.expectRevert("Invalid escrow");
-        registry.setAuthorizedEscrow(address(0), true);
-    }
-
-    function test_SetAuthorizedEscrow_NotOwner() public {
-        vm.prank(nobody);
-        vm.expectRevert();
-        registry.setAuthorizedEscrow(escrow, true);
-    }
-
-    // ==================== VOLUME TRACKING ====================
-
-    function test_RecordVolume() public {
-        registry.registerLogic(IPFS_CID, developer, true, 4);
-        registry.setAuthorizedEscrow(escrow, true);
-
-        vm.expectEmit(true, false, false, true);
-        emit VolumeRecorded(logicId, 1000 * 1e6);
-
-        vm.prank(escrow);
-        registry.recordVolume(logicId, 1000 * 1e6);
-        assertEq(registry.getVolume(logicId), 1000 * 1e6);
-
-        vm.prank(escrow);
-        registry.recordVolume(logicId, 500 * 1e6);
-        assertEq(registry.getVolume(logicId), 1500 * 1e6);
-    }
-
-    function test_RecordVolume_NotAuthorized() public {
-        registry.registerLogic(IPFS_CID, developer, true, 4);
-
-        vm.prank(escrow);
-        vm.expectRevert("Not authorized escrow");
-        registry.recordVolume(logicId, 1000 * 1e6);
-    }
-
-    function test_RecordVolume_NotFound() public {
-        registry.setAuthorizedEscrow(escrow, true);
-
-        vm.prank(escrow);
-        vm.expectRevert("Logic not found");
-        registry.recordVolume(logicId, 1000 * 1e6);
-    }
-
-    function test_RecordVolume_DeauthorizedEscrow() public {
-        registry.registerLogic(IPFS_CID, developer, true, 4);
-        registry.setAuthorizedEscrow(escrow, true);
-
-        // Record once OK
-        vm.prank(escrow);
-        registry.recordVolume(logicId, 100 * 1e6);
-
-        // Deauthorize
-        registry.setAuthorizedEscrow(escrow, false);
-
-        // Now fails
-        vm.prank(escrow);
-        vm.expectRevert("Not authorized escrow");
-        registry.recordVolume(logicId, 100 * 1e6);
-    }
-
-    // ==================== VIEW FUNCTIONS ====================
-
-    function test_GetAllLogicIds() public {
-        registry.registerLogic(IPFS_CID, developer, true, 4);
-        registry.registerLogic(IPFS_CID_2, developer, false, 0);
-
-        bytes32[] memory ids = registry.getAllLogicIds();
-        assertEq(ids.length, 2);
-        assertEq(ids[0], logicId);
-        assertEq(ids[1], logicId2);
-    }
-
-    function test_GetGameLogic_NotFound() public {
-        vm.expectRevert("Logic not found");
-        registry.getGameLogic(logicId);
-    }
-
-    function test_RegistryViewFunctions() public {
-        registry.registerLogic(IPFS_CID, developer, true, 4);
-
-        assertEq(registry.getIpfsCid(logicId), IPFS_CID);
-        assertEq(registry.getDeveloper(logicId), developer);
-        assertFalse(registry.isVerified(logicId));
-        assertTrue(registry.isActive(logicId));
-        assertTrue(registry.isBettingEnabled(logicId));
-        assertEq(registry.getMaxStreets(logicId), 4);
-        assertEq(registry.getVolume(logicId), 0);
-    }
-
-    function test_ViewFunctions_NonExistentLogic() public view {
-        // View functions on non-existent IDs return defaults (no revert)
-        assertFalse(registry.isBettingEnabled(logicId));
-        assertEq(registry.getMaxStreets(logicId), 0);
-        assertFalse(registry.isVerified(logicId));
-        assertFalse(registry.isActive(logicId));
-        assertEq(registry.getDeveloper(logicId), address(0));
-        assertEq(registry.getVolume(logicId), 0);
-    }
-
-    // ==================== BATCH OPERATIONS ====================
-
-    function test_GetGameLogicsBatch() public {
-        registry.registerLogic(IPFS_CID, developer, true, 4);
-        registry.registerLogic(IPFS_CID_2, developer, false, 0);
-
-        bytes32[] memory ids = new bytes32[](2);
-        ids[0] = logicId;
-        ids[1] = logicId2;
-
-        LogicRegistry.GameLogic[] memory games = registry.getGameLogicsBatch(ids);
-
-        assertEq(games.length, 2);
-        assertTrue(games[0].bettingEnabled);
-        assertFalse(games[1].bettingEnabled);
-        assertTrue(games[0].isActive);
-        assertTrue(games[1].isActive);
-    }
-
-    function test_GetGameLogicsBatch_InvalidId() public {
-        registry.registerLogic(IPFS_CID, developer, true, 4);
-
-        bytes32[] memory ids = new bytes32[](2);
-        ids[0] = logicId;
-        ids[1] = logicId2; // not registered
-
-        vm.expectRevert("Logic not found");
-        registry.getGameLogicsBatch(ids);
-    }
-
-    function test_GetGameLogicsBatch_Empty() public view {
-        bytes32[] memory ids = new bytes32[](0);
-        LogicRegistry.GameLogic[] memory games = registry.getGameLogicsBatch(ids);
-        assertEq(games.length, 0);
-    }
-
-    // ==================== POKER VARIANT REGISTRATION ====================
-
-    function test_RegisterFiveCardDraw() public {
-        bytes32 id = registry.registerLogic("QmFiveCardDraw", developer, true, 1);
-        assertTrue(registry.isBettingEnabled(id));
-        assertEq(registry.getMaxStreets(id), 1);
-    }
-
-    function test_RegisterTexasHoldem() public {
-        bytes32 id = registry.registerLogic("QmTexasHoldem", developer, true, 4);
-        assertTrue(registry.isBettingEnabled(id));
-        assertEq(registry.getMaxStreets(id), 4);
-    }
-
-    function test_RegisterSevenCardStud() public {
-        bytes32 id = registry.registerLogic("QmSevenCardStud", developer, true, 5);
-        assertTrue(registry.isBettingEnabled(id));
-        assertEq(registry.getMaxStreets(id), 5);
-    }
-
-    function test_RegisterRPS() public {
-        bytes32 id = registry.registerSimpleGame("QmRPS", developer);
-        assertFalse(registry.isBettingEnabled(id));
-        assertEq(registry.getMaxStreets(id), 0);
-    }
-
-    // ==================== EDGE CASES ====================
-
-    function test_MultipleGamesSameDeveloper() public {
-        registry.registerLogic("QmGame1", developer, true, 4);
-        registry.registerLogic("QmGame2", developer, false, 0);
-        registry.registerLogic("QmGame3", developer, true, 1);
-
-        assertEq(registry.getRegistryCount(), 3);
-    }
-
-    function test_VolumeAccumulation_MultipleEscrows() public {
-        registry.registerLogic(IPFS_CID, developer, true, 4);
-        registry.setAuthorizedEscrow(escrow, true);
-        registry.setAuthorizedEscrow(address(0x789), true);
-
-        vm.prank(escrow);
-        registry.recordVolume(logicId, 100 * 1e6);
-
-        vm.prank(address(0x789));
-        registry.recordVolume(logicId, 200 * 1e6);
-
-        vm.prank(escrow);
-        registry.recordVolume(logicId, 300 * 1e6);
-
-        assertEq(registry.getVolume(logicId), 600 * 1e6);
-    }
-
-    function test_UpdateBettingAfterRegistration() public {
-        registry.registerSimpleGame(IPFS_CID, developer);
-
-        assertFalse(registry.isBettingEnabled(logicId));
-        assertEq(registry.getMaxStreets(logicId), 0);
-
-        registry.setBettingEnabled(logicId, true);
-        registry.setMaxStreets(logicId, 4);
-
-        assertTrue(registry.isBettingEnabled(logicId));
-        assertEq(registry.getMaxStreets(logicId), 4);
-    }
-
-    function test_DeactivatedGame_StillReadable() public {
-        registry.registerLogic(IPFS_CID, developer, true, 4);
-        registry.setActive(logicId, false);
-
-        // All data still readable even when deactivated
-        LogicRegistry.GameLogic memory game = registry.getGameLogic(logicId);
-        assertEq(game.ipfsCid, IPFS_CID);
-        assertEq(game.developer, developer);
-        assertFalse(game.isActive);
-        assertTrue(game.bettingEnabled);
+        registry.registerLogic(CID, developer, false, 1);
     }
 }

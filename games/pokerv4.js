@@ -35,13 +35,19 @@ export default class ShowdownBlitzPokerV4 {
     const deck = this.generateDeck(state.matchId + "_" + move.round);
     const initialHand = isPlayerA ? deck.slice(0, 5) : deck.slice(5, 10);
 
-    // V4 COMPATIBILITY: Parse bytes32 or string moveData
-    const moveData = move.moveData.toString();
+    // V4 COMPATIBILITY: Parse bytes32 hex string safely
+    const moveData = (move.moveData || "0").toString();
     let moveVal;
     if (moveData.startsWith('0x')) {
-        moveVal = parseInt(moveData, 16);
+        try {
+            // Use BigInt for 32-byte hex strings to avoid precision loss
+            // We only care about the lower 32 bits for the poker bitmask
+            moveVal = Number(BigInt(moveData) & BigInt(0xFFFFFFFF)); 
+        } catch (e) {
+            moveVal = 0;
+        }
     } else {
-        moveVal = parseInt(moveData, 10);
+        moveVal = parseInt(moveData, 10) || 0;
     }
 
     // Bitmask encoding: each bit 0-4 represents a card index to discard

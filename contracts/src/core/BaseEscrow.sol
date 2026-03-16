@@ -47,6 +47,11 @@ abstract contract BaseEscrow is IBaseEscrow, ReentrancyGuard, Ownable2Step, Paus
     // Pull-payment withdrawals
     mapping(address => uint256) public pendingWithdrawals;
 
+    // Mid-game pot accounting: tracks pots distributed between rounds (e.g. PokerEngine round pots)
+    // so final settlement does not double-charge rake or overdraft the contract.
+    mapping(uint256 => uint256) internal _midGameDistributed;
+    mapping(uint256 => mapping(address => uint256)) internal _midGameReceived;
+
     // --- CONSTRUCTOR ---
     constructor(address initialTreasury, address usdcAddress) Ownable(msg.sender) {
         require(initialTreasury != address(0), "Invalid treasury");
@@ -281,11 +286,15 @@ abstract contract BaseEscrow is IBaseEscrow, ReentrancyGuard, Ownable2Step, Paus
 
         m.status = MatchStatus.SETTLED;
 
+        // Use effectivePot (excluding already-distributed mid-game round pots)
+        // to avoid double-raking and overdrafting. m.totalPot is kept for _recordVolume only.
+        uint256 effectivePot = m.totalPot - _midGameDistributed[matchId];
+
         // Calculate rake split: 2.5% to developer, 5% to protocol treasury
-        uint256 totalRake = (m.totalPot * RAKE_BPS) / 10000;
-        uint256 devRoyalty = (m.totalPot * DEV_ROYALTY_BPS) / 10000;
+        uint256 totalRake = (effectivePot * RAKE_BPS) / 10000;
+        uint256 devRoyalty = (effectivePot * DEV_ROYALTY_BPS) / 10000;
         uint256 protocolRake = totalRake - devRoyalty;
-        uint256 remainingPot = m.totalPot - totalRake;
+        uint256 remainingPot = effectivePot - totalRake;
 
         address dev = _getLogicDeveloper(m.logicId);
         if (dev != address(0)) {
@@ -304,6 +313,13 @@ abstract contract BaseEscrow is IBaseEscrow, ReentrancyGuard, Ownable2Step, Paus
             totalSplit += res.splitBps[i];
         }
         require(totalSplit == 10000, "Splits must sum to 10000");
+
+        // Reject duplicate winner indices to prevent double-payment
+        for (uint i = 0; i < res.winnerIndices.length; i++) {
+            for (uint j = i + 1; j < res.winnerIndices.length; j++) {
+                require(res.winnerIndices[i] != res.winnerIndices[j], "Duplicate winner index");
+            }
+        }
 
         // Distribute with rounding dust going to last winner
         uint256 distributed = 0;
@@ -358,8 +374,11 @@ abstract contract BaseEscrow is IBaseEscrow, ReentrancyGuard, Ownable2Step, Paus
 
         m.status = MatchStatus.SETTLED;
 
-        uint256 totalRake = (m.totalPot * RAKE_BPS) / 10000;
-        uint256 devRoyalty = (m.totalPot * DEV_ROYALTY_BPS) / 10000;
+        // Use effectivePot (excluding already-distributed mid-game round pots)
+        uint256 effectivePot = m.totalPot - _midGameDistributed[matchId];
+
+        uint256 totalRake = (effectivePot * RAKE_BPS) / 10000;
+        uint256 devRoyalty = (effectivePot * DEV_ROYALTY_BPS) / 10000;
         uint256 protocolRake = totalRake - devRoyalty;
 
         address dev = _getLogicDeveloper(m.logicId);
@@ -371,7 +390,7 @@ abstract contract BaseEscrow is IBaseEscrow, ReentrancyGuard, Ownable2Step, Paus
         _safeTransferUSDC(treasury, protocolRake);
 
         // Split remaining equally among all players
-        uint256 remainingPot = m.totalPot - totalRake;
+        uint256 remainingPot = effectivePot - totalRake;
         uint256 perPlayer = remainingPot / m.players.length;
         uint256 distributed = 0;
 
@@ -397,6 +416,16 @@ abstract contract BaseEscrow is IBaseEscrow, ReentrancyGuard, Ownable2Step, Paus
     function _addContribution(uint256 matchId, address player, uint256 amount) internal {
         playerContributions[matchId][player] += amount;
         matches[matchId].totalPot += amount;
+    }
+
+    /**
+     * @dev Record a mid-game distribution (e.g., round pot payout in PokerEngine).
+     * Reduces the effective pot used for final settlement and refund calculations,
+     * preventing double-raking and overdrafting the contract.
+     */
+    function _recordMidGameDistribution(uint256 matchId, address recipient, uint256 amount) internal {
+        _midGameDistributed[matchId] += amount;
+        _midGameReceived[matchId][recipient] += amount;
     }
 
     // --- TRANSFERS ---
@@ -456,14 +485,38 @@ abstract contract BaseEscrow is IBaseEscrow, ReentrancyGuard, Ownable2Step, Paus
 
         m.status = MatchStatus.VOIDED;
 
-        // Refund all players their full contributions (stake + raises)
+        // Available pool for refunds: total pot minus anything already paid out (round pots + rake).
+        // Mid-game rake reduces this below the sum of net contributions, so we must distribute
+        // pro-rata rather than blindly refunding contrib-received (which would overdraft).
+        uint256 effectivePot = m.totalPot - _midGameDistributed[matchId];
+
+        // First pass: compute each player's net owed and the total.
+        uint256[] memory owed = new uint256[](m.players.length);
+        uint256 totalOwed = 0;
         for (uint i = 0; i < m.players.length; i++) {
             address player = m.players[i];
-            uint256 refund = playerContributions[matchId][player];
-            if (refund > 0) {
-                playerContributions[matchId][player] = 0;
-                _safeTransferUSDC(player, refund);
+            uint256 contrib  = playerContributions[matchId][player];
+            uint256 received = _midGameReceived[matchId][player];
+            owed[i] = contrib > received ? contrib - received : 0;
+            totalOwed += owed[i];
+            playerContributions[matchId][player] = 0;
+        }
+
+        // Second pass: refund pro-rata if rake shrinks the pool below total owed.
+        uint256 distributed = 0;
+        for (uint i = 0; i < m.players.length; i++) {
+            if (owed[i] == 0) continue;
+            uint256 refund;
+            if (i == m.players.length - 1) {
+                // Last player gets remainder to avoid dust accumulation.
+                refund = effectivePot > distributed ? effectivePot - distributed : 0;
+            } else if (totalOwed <= effectivePot) {
+                refund = owed[i];
+            } else {
+                refund = (owed[i] * effectivePot) / totalOwed;
             }
+            distributed += refund;
+            _safeTransferUSDC(m.players[i], refund);
         }
 
         emit MatchVoided(matchId, "Admin intervention");
@@ -487,6 +540,12 @@ abstract contract BaseEscrow is IBaseEscrow, ReentrancyGuard, Ownable2Step, Paus
 
     function getMatchWinner(uint256 matchId) external view returns (address) {
         return matches[matchId].winner;
+    }
+
+    /// @dev Returns gross USDC already paid out mid-game for a match (round pots + rake).
+    /// Useful for invariant tests and off-chain tooling to compute remaining contract obligations.
+    function getMidGameDistributed(uint256 matchId) external view returns (uint256) {
+        return _midGameDistributed[matchId];
     }
 
     // --- HOOKS ---
